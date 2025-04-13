@@ -5,7 +5,7 @@ import { Config } from "../../config";
 import type { ToolRunStatus } from "./_schemas";
 
 export const runTool = new Elysia()
-  .post('/tools/:toolName/runs', async ({ params: { toolName }, body: { runId, input } }) => {
+  .post('/tools/:toolName/runs', async function* runTool({ params: { toolName }, body: { runId, input } }) {
     // Get the tool directory
     const toolDirPath = path.join(Config.WORKSPACE_PATH, toolName);
 
@@ -53,6 +53,7 @@ export const runTool = new Elysia()
         const message = iterResult.value;
 
         // Concurrently log and emit the message
+        yield formatMessage(runId, message);
         await handleToolRunMessage(toolName, runId, message);
         
         // Get the next value
@@ -63,12 +64,14 @@ export const runTool = new Elysia()
       const result = iterResult.value;
 
       // Concurrently write and emit the result
+      yield formatResult(runId, result);
       await handleToolRunResult(toolName, runId, result);
 
-      return result;
+      // return result;
     } catch (error) {
       console.error(`[${runId}] - Error:`, error);
       // Concurrently log and emit the error
+      yield formatError(runId, error as Error);
       await handleToolRunError(toolName, runId, error as Error);
     }
 

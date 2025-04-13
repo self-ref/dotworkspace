@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Tool Server Chat</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f8f9fa;
+      }
+      .chat-container {
+        display: flex;
+        flex-direction: column;
+        height: 80vh;
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        overflow: hidden;
+      }
+      .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 15px;
+      }
+      .message {
+        margin-bottom: 12px;
+        padding: 10px 15px;
+        border-radius: 18px;
+        max-width: 80%;
+        line-height: 1.4;
+        word-wrap: break-word; /* Ensure long words break */
+      }
+      .user-message {
+        background-color: #007bff;
+        color: white;
+        align-self: flex-end;
+        margin-left: auto;
+        border-bottom-right-radius: 4px;
+      }
+      .assistant-message {
+        background-color: #e9ecef;
+        color: #333;
+        align-self: flex-start;
+        border-bottom-left-radius: 4px;
+      }
+      .tool-call-message, .tool-result-message, .tool-progress-message {
+        background-color: #fff3cd;
+        color: #664d03;
+        border: 1px solid #ffecb5;
+        font-family: monospace;
+        font-size: 0.9em;
+        padding: 8px 12px;
+        margin: 5px 0 10px 40px; /* Indent tool messages */
+        max-width: calc(80% - 40px);
+        align-self: flex-start;
+        border-radius: 8px;
+        overflow-x: auto; /* Allow scrolling for wide tool outputs */
+      }
+      .tool-call-message strong, .tool-result-message strong, .tool-progress-message strong {
+        color: #5b3a00;
+        display: block; /* Make titles distinct */
+        margin-bottom: 4px;
+      }
+      .message-form {
+        display: flex;
+        padding: 15px;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+      }
+      input[type="text"] {
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #ced4da;
+        border-radius: 20px;
+        margin-right: 10px;
+      }
+      button {
+        padding: 10px 20px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 20px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+      button:hover:not(:disabled) {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+      }
+      .thinking {
+        font-style: italic;
+        color: #6c757d;
+        align-self: flex-start;
+        padding: 10px 15px;
+      }
+      .debug-controls {
+          padding: 0 15px 10px;
+      }
+      .debug-info {
+        font-size: 0.85em;
+        color: #495057;
+        background-color: #f1f3f5;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-top: 10px;
+        padding: 10px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .debug-toggle {
+        cursor: pointer;
+        color: #007bff;
+        text-decoration: underline;
+        font-size: 0.9em;
+        display: inline-block;
+      }
+      pre {
+        white-space: pre-wrap; /* Wrap long lines in pre tags */
+        word-wrap: break-word;
+      }
+    </style>
+  </head>
+  <body x-data="chatApp()" x-init="init()">
+    <h1 style="text-align: center; margin-bottom: 20px;">Tool Server Chat</h1>
+    
+    <div class="chat-container">
+      <div class="chat-messages" id="chat-messages" x-ref="chatMessages">
+        <template x-for="(message, index) in messages" :key="message.id || index">
+          <div :class="getMessageClass(message)">
+            <!-- User/Assistant Text -->
+            <template x-if="message.role === 'user' || (message.role === 'assistant' && message.type === 'text')">
+              <div x-html="formatMessage(message.content)"></div>
+            </template>
+            
+            <!-- Tool Call -->
+            <template x-if="message.type === 'tool_call'">
+              <div class="tool-call-message">
+                <div><strong>Tool Call:</strong> <span x-text="message.toolName"></span> (<span x-text="message.toolCallId?.substring(0, 8) || 'N/A'"></span>)</div>
+                <strong>Args:</strong>
+                <pre x-text="JSON.stringify(message.args, null, 2)"></pre>
+              </div>
+            </template>
+            
+            <!-- Tool Result -->
+            <template x-if="message.type === 'tool_result'">
+              <div class="tool-result-message">
+                <div><strong>Tool Result:</strong> (<span x-text="message.toolCallId?.substring(0, 8) || 'N/A'"></span>)</div>
+                <pre x-text="JSON.stringify(message.result, null, 2)"></pre>
+              </div>
+            </template>
+            
+            <!-- Assistant Message Annotations (Tool Progress) -->
+            <template x-if="message.role === 'assistant' && message.annotations && message.annotations.length > 0">
+              <div>
+                <template x-for="(annotation, annotIndex) in message.annotations" :key="annotIndex">
+                  <template x-if="annotation.tool_progress">
+                    <div class="tool-progress-message">
+                      <div><strong>Tool Progress:</strong> <span x-text="annotation.tool_progress.toolName"></span> (<span x-text="annotation.tool_progress.toolCallId?.substring(0, 8) || 'N/A'"></span>)</div>
+                      <pre x-text="JSON.stringify(annotation.tool_progress.message, null, 2)"></pre>
+                    </div>
+                  </template>
+                   <template x-if="annotation.tool_completion">
+                     <div class="tool-progress-message" style="border-color: #a3cfbb; background-color: #d1e7dd; color: #0a3622;">
+                       <div><strong>Tool Completed:</strong> <span x-text="annotation.tool_completion.toolName"></span> (<span x-text="annotation.tool_completion.toolCallId?.substring(0, 8) || 'N/A'"></span>)</div>
+                     </div>
+                   </template>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+        
+        <!-- Loading Indicator -->
+        <div x-show="isLoading" class="message thinking">
+          Thinking...
+        </div>
+      </div>
+      
+      <!-- Input Form -->
+      <form class="message-form" @submit.prevent="sendMessage">
+        <input 
+          type="text" 
+          x-model="userInput" 
+          placeholder="Type your message here..."
+          :disabled="isLoading"
+          aria-label="Chat input"
+          x-ref="chatInput"
+          @keydown.enter.prevent="sendMessage"
+        />
+        <button type="submit" :disabled="isLoading || !userInput.trim()">Send</button>
+      </form>
+      
+      <!-- Debug Area -->
+      <div class="debug-controls">
+        <span class="debug-toggle" @click="showDebug = !showDebug" x-text="showDebug ? 'Hide Debug Info' : 'Show Debug Info'"></span>
+        <div x-show="showDebug && streamData.length > 0" class="debug-info">
+          <h4>Raw Stream Parts:</h4>
+          <pre x-text="JSON.stringify(streamData, null, 2)"></pre>
+        </div>
+      </div>
+    </div>
+    
+    <script>
+      /**
+       * Alpine.js component logic for the chat application.
+       */
+      function chatApp() {
+        return {
+          /** @type {Array<object>} messages - Array storing the chat message history. */
+          messages: [],
+          /** @type {Array<object>} streamData - Array storing raw Vercel AI stream parts for debugging. */
+          streamData: [],
+          /** @type {string} userInput - Current value of the user input field. */
+          userInput: '',
+          /** @type {boolean} isLoading - Flag indicating if a response is currently being streamed. */
+          isLoading: false,
+          /** @type {string|null} currentAssistantMessageId - ID of the current assistant message being built. */
+          currentAssistantMessageId: null,
+          /** @type {boolean} showDebug - Flag to control visibility of the debug area. */
+          showDebug: false,
+
+          /**
+           * Initializes the chat application.
+           */
+          init() {
+            console.log('Chat app initialized.');
+            this.$nextTick(() => this.focusInput()); // Focus input on initial load
+          },
+
+          /**
+           * Generates a unique ID for messages.
+           * @param {string} prefix - Optional prefix for the ID.
+           * @returns {string} A unique ID string.
+           */
+          generateId(prefix = 'msg') {
+              return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+          },
+
+          /**
+           * Sends the user's message to the backend and processes the streamed response.
+           */
+          sendMessage() {
+            const trimmedInput = this.userInput.trim();
+            if (!trimmedInput || this.isLoading) return; // Prevent sending empty or while loading
+
+            const userMessage = {
+              id: this.generateId('user'),
+              role: 'user',
+              content: trimmedInput,
+              type: 'text' // Add type for consistency
+            };
+            
+            this.messages.push(userMessage);
+            this.isLoading = true;
+            this.userInput = ''; // Clear input after adding to messages
+            this.streamData = []; // Clear debug data for new message
+            this.currentAssistantMessageId = null; // Reset current assistant message ID
+
+            this.scrollToBottom();
+            
+            // Prepare messages for the API, conforming to CoreMessage structure
+            const apiMessages = this.prepareApiMessages();
+
+            // --- DEBUGGING --- 
+            console.log('Sending API Messages:', JSON.stringify(apiMessages, null, 2));
+            // --- END DEBUGGING ---
+
+            fetch('/ai/chat', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                // modelName: 'gpt-4o', // Example: you might want to make this configurable
+                messages: apiMessages // Send the correctly formatted messages
+              })
+            })
+            .then(response => {
+              if (!response.ok) {
+                // Attempt to read error details from the response body
+                return response.text().then(text => {
+                    throw new Error(`Network response was not ok: ${response.status} ${response.statusText} - ${text}`);
+                });
+              }
+              if (!response.body) {
+                  throw new Error('Response body is null');
+              }
+              const reader = response.body.getReader();
+              const decoder = new TextDecoder();
+              
+              // Start processing the stream
+              return this.processStreamReader(reader, decoder);
+            })
+            .catch(error => {
+              console.error('Error sending message:', error);
+              this.handleError(`Sorry, there was an error sending the message: ${error.message}`);
+            });
+          },
+
+          /**
+           * Prepares the message history array for the API request,
+           * ensuring it conforms to the expected CoreMessage structure,
+           * including the workaround for tool results.
+           * @returns {Array<object>} The array of messages formatted for the API.
+           */
+          prepareApiMessages() {
+              return this.messages.map(m => {
+                  // Basic user/assistant text message
+                  if (m.role === 'user' || (m.role === 'assistant' && m.type === 'text')) {
+                      return { role: m.role, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) };
+                  }
+                  // Assistant message that includes a tool call
+                  if (m.role === 'assistant' && m.type === 'tool_call') {
+                      const resultMsg = this.messages.find(resMsg =>
+                          resMsg.type === 'tool_result' && resMsg.toolCallId === m.toolCallId
+                      );
+                      if (!resultMsg) {
+                         console.warn(`Tool call (id: ${m.id}, toolCallId: ${m.toolCallId}) found without a corresponding result in local history when sending.`);
+                         // Send only the invocation part if no result is found (might still error, but best effort)
+                         return {
+                              role: 'assistant', content: typeof m.content === 'string' ? m.content : '',
+                              toolInvocations: [{ toolCallId: m.toolCallId, toolName: m.toolName, args: m.args }]
+                         };
+                      }
+                      // IMPORTANT HACK: Attach result directly to invocation for internal SDK check
+                      return {
+                          role: 'assistant', content: typeof m.content === 'string' ? m.content : '',
+                          toolInvocations: [{
+                              toolCallId: m.toolCallId, toolName: m.toolName, args: m.args,
+                              result: resultMsg.result // Add result here
+                          }]
+                      };
+                  }
+                  // Tool result message - Filter this out as the result is now attached above
+                  if (m.role === 'tool' && m.type === 'tool_result') {
+                      console.log(`Filtering out tool_result message (toolCallId: ${m.toolCallId}) as result is attached to invocation.`);
+                      return null;
+                  }
+                  console.warn('Filtering out unexpected message structure during API mapping:', m);
+                  return null;
+              }).filter(m => m !== null);
+          },
+
+          /**
+           * Recursively processes the ReadableStream from the fetch response.
+           * @param {ReadableStreamDefaultReader} reader - The stream reader.
+           * @param {TextDecoder} decoder - The text decoder.
+           */
+          processStreamReader(reader, decoder) {
+            reader.read().then(({ done, value }) => {
+              if (done) {
+                this.finalizeStream();
+                return;
+              }
+
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split('\n'); // Vercel protocol uses newline as delimiter
+              
+              lines.forEach(line => {
+                if (!line) return; // Skip empty lines
+                
+                try {
+                  this.parseAndHandleStreamPart(line);
+                } catch (e) {
+                  console.error('Error processing stream line:', e, '\nLine:', line);
+                  // Optionally add an error indicator in the UI or debug log
+                  this.streamData.push({ error: 'Processing Error', line: line, details: e.message });
+                }
+              });
+
+              // Scroll to bottom after processing chunk
+              this.scrollToBottom();
+
+              // Continue reading the stream
+              this.processStreamReader(reader, decoder); // Recurse
+              
+            }).catch(error => {
+                console.error('Error reading stream:', error);
+                this.handleError('Sorry, there was an error reading the response.');
+            });
+          },
+
+          /**
+           * Parses a single line from the stream according to the Vercel AI protocol
+           * and calls the appropriate handler.
+           * @param {string} line - A single line from the stream.
+           */
+          parseAndHandleStreamPart(line) {
+            // Match the Vercel AI protocol format: TYPE_ID:CONTENT_JSON\n
+            const match = line.match(/^([a-zA-Z0-9]+):(.*)$/);
+            if (match) {
+              const typeId = match[1];
+              const contentStr = match[2];
+              let content;
+              try {
+                // Type 3 (Error) is a raw string, all others are expected to be JSON.
+                // Type 0 (Text) specifically contains a JSON *string* (e.g., "Hello").
+                content = (typeId === '3') ? contentStr : JSON.parse(contentStr);
+              } catch (e) {
+                // Handle cases where JSON parsing fails unexpectedly
+                console.warn(`Failed to parse JSON for type '${typeId}', treating as string. Line: ${line}`, e);
+                // Fallback to using the raw string content if JSON parsing fails
+                // This might happen if the protocol is slightly off or for unexpected types.
+                content = contentStr; 
+              }
+              
+              // Store raw part details for debugging (using the original string for content)
+              this.streamData.push({ typeId, rawContent: contentStr }); 
+              
+              // Handle the parsed part
+              this.handleStreamPart(typeId, content);
+            } else {
+                 console.warn('Stream line does not match Vercel AI protocol:', line);
+                 this.streamData.push({ warning: 'Non-protocol line', line: line });
+            }
+          },
+          
+          /**
+           * Handles a parsed stream part based on its type ID.
+           * Updates the messages array accordingly.
+           * @param {string} typeId - The Vercel AI stream part type ID (e.g., '0', '8', '9', 'a').
+           * @param {any} content - The parsed content of the stream part.
+           */
+          handleStreamPart(typeId, content) {
+            let lastMessage = this.messages.length > 0 ? this.messages[this.messages.length - 1] : null;
+            let assistantMessage = this.currentAssistantMessageId
+              ? this.messages.find(m => m.id === this.currentAssistantMessageId)
+              : null;
+
+            switch(typeId) {
+              // Text Part: 0:string\n
+              case '0':
+                if (!assistantMessage) {
+                    // First text part, create the assistant message object
+                    this.currentAssistantMessageId = this.generateId('assistant');
+                    assistantMessage = {
+                        id: this.currentAssistantMessageId,
+                        role: 'assistant',
+                        type: 'text',
+                        content: content,
+                        annotations: []
+                    };
+                    this.messages.push(assistantMessage);
+                } else if (assistantMessage.role === 'assistant') {
+                    // Append text to the existing assistant message
+                    assistantMessage.content += content;
+                }
+                break;
+                
+              // Data Part: 2:Array<JSONValue>\n
+              case '2':
+                // Currently just logs to debug, can be used for custom UI updates
+                console.log('Received data part (type 2):', content);
+                break;
+                
+              // Error Part: 3:string\n
+              case '3':
+                console.error('Received stream error part (type 3):', content);
+                // Optionally display this error in the UI
+                break;
+                
+              // Message Annotation Part: 8:Array<JSONValue>\n
+              case '8':
+                if (assistantMessage) {
+                  assistantMessage.annotations = assistantMessage.annotations || [];
+                  // Vercel sends annotations as the full object, not an array
+                  assistantMessage.annotations.push(content); 
+                } else {
+                  console.warn('Received annotation (type 8) but no current assistant message.');
+                }
+                break;
+                
+              // Tool Call Part: 9:{toolCallId:string; toolName:string; args:object}\n
+              case '9':
+                 // The AI SDK sends this *after* the assistant message is complete.
+                 // Add it as a separate message in the history.
+                this.messages.push({
+                  id: this.generateId('tool-call'),
+                  role: 'assistant', // Technically part of the assistant's turn
+                  type: 'tool_call',
+                  toolCallId: content.toolCallId,
+                  toolName: content.toolName,
+                  args: content.args
+                });
+                break;
+                
+              // Tool Result Part: a:{toolCallId:string; result:object}\n
+              case 'a':
+                 // Add this as a separate message representing the tool's output.
+                this.messages.push({
+                  id: this.generateId('tool-result'),
+                  role: 'tool', // Represents the tool's direct output
+                  type: 'tool_result',
+                  toolCallId: content.toolCallId,
+                  result: content.result,
+                  // Find the corresponding tool call to link if needed, though often just chronological order is fine.
+                  // toolName: this.messages.find(m => m.toolCallId === content.toolCallId)?.toolName
+                });
+                break;
+
+              // --- Control Flow Parts --- 
+              // Start Step Part: f:{messageId:string}\n
+              case 'f': 
+                // Can be used to associate stream parts with a specific step if needed
+                // console.log('Step started:', content.messageId);
+                break;
+                
+              // Finish Step Part: e:{finishReason:...}
+              case 'e':
+                // Indicates a backend LLM call finished (useful for multi-step processes)
+                // console.log('Step finished:', content.finishReason);
+                break;
+                
+              // Finish Message Part: d:{finishReason:...}
+              case 'd':
+                // console.log('Message finished:', content.finishReason);
+                this.finalizeStream(); // Primary signal that the entire response is done.
+                this.currentAssistantMessageId = null; // Reset for the next message
+                break;
+                
+              // Ignore other parts for now, but log them
+              default:
+                console.log(`Received unhandled stream part type '${typeId}':`, content);
+                break;
+            }
+          },
+          
+          /**
+           * Handles cleanup and state changes when the stream finishes or errors.
+           * @param {string} [errorMessage] - Optional error message to display.
+           */
+          handleError(errorMessage) {
+              this.isLoading = false;
+              this.currentAssistantMessageId = null;
+              this.messages.push({
+                  id: this.generateId('error'),
+                  role: 'assistant',
+                  type: 'text',
+                  content: errorMessage
+              });
+              this.scrollToBottom();
+              this.focusInput(); // Focus input after error
+          },
+
+          /**
+            * Finalizes the stream processing.
+            */
+           finalizeStream() {
+              this.isLoading = false;
+              this.currentAssistantMessageId = null;
+              this.focusInput(); // Focus input after completion
+              console.log('Stream finalized.');
+           },
+
+          /**
+           * Formats message content for display (handles newlines and basic markdown like code blocks).
+           * @param {string} content - The raw message content.
+           * @returns {string} HTML formatted string.
+           */
+          formatMessage(content) {
+            if (typeof content !== 'string') return '';
+            // Basic markdown conversion (newlines to <br>, ```code``` to <pre><code>)
+            return content
+              .replace(/\n/g, '<br>')
+              .replace(/```([\s\S]*?)```/g, (_match, code) => 
+                `<pre><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`
+              );
+          },
+
+          /**
+           * Scrolls the chat messages container to the bottom.
+           */
+          scrollToBottom() {
+            this.$nextTick(() => {
+              const chatContainer = this.$refs.chatMessages; // Use Alpine ref
+              if (chatContainer) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+              }
+            });
+          },
+
+          /**
+           * Determines the CSS class for a message based on its role and type.
+           * @param {object} message - The message object.
+           * @returns {string} The CSS class string.
+           */
+          getMessageClass(message) {
+              if (message.role === 'user') return 'message user-message';
+              if (message.role === 'assistant') {
+                  if (message.type === 'tool_call') return 'message tool-call-message';
+                  return 'message assistant-message'; // Default assistant text
+              }
+              if (message.role === 'tool' && message.type === 'tool_result') return 'message tool-result-message';
+              // Fallback for other/unknown types
+              return 'message'; 
+          },
+
+          /** Focuses the chat input field. */
+          focusInput() {
+              this.$nextTick(() => {
+                  this.$refs.chatInput?.focus();
+              });
+          }
+        };
+      }
+    </script>
+  </body>
+</html>

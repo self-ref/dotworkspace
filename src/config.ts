@@ -1,5 +1,4 @@
 import { $ } from "bun";
-import path from "node:path";
 import { parseArgs } from "node:util";
 
 // Parse the command line arguments

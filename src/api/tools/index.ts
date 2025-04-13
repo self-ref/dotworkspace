@@ -5,6 +5,7 @@ import { deleteToolRun } from './deleteToolRun';
 import { getTool } from './getTool';
 import { getToolRun } from './getToolRun';
 import { getToolRunLogs } from './getToolRunLogs';
+import { getToolSourceCode } from './getToolSourceCode';
 import { listToolRuns } from './listToolRuns';
 import { listTools } from './listTools';
 import { runTool } from './runTool';
@@ -16,6 +17,7 @@ export const toolsApi = new Elysia()
   .use(getTool)
   .use(getToolRun)
   .use(getToolRunLogs)
+  .use(getToolSourceCode)
   .use(listToolRuns)
   .use(listTools)
   .use(runTool);
