@@ -1,4 +1,7 @@
-import Elysia from "elysia";
+/**
+ * AI API endpoints
+ */
+import { Elysia } from "elysia";
 import { chat } from "./chat";
 
 export const aiAPI = new Elysia()

@@ -1,613 +1,1538 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>Tool Server Chat</title>
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>.workspace</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lucide-static@latest/font/lucide.min.css">
     <style>
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 20px;
-        background-color: #f8f9fa;
+      :root {
+        /* Vercel-esque Dark Theme */
+        --bg-primary: #111111; /* Slightly off-black */
+        --bg-secondary: #1a1a1a; /* Cards, input */
+        --bg-tertiary: #222222; /* Code blocks, hover */
+        --text-primary: #eaeaea;
+        --text-secondary: #a0a0a0; /* Meta text, placeholders */
+        --text-muted: #666666; /* Subtle borders, disabled elements */
+        --border-color: #333333;
+        --focus-ring: #0070f3; /* Accent for focus */
+        --accent-color: #0070f3; /* Primary action, links */
+        --accent-light: #3291ff; /* Hover states for accent */
+        --user-bubble-bg: #0070f3;
+        --user-bubble-text: #ffffff;
+        --assistant-bubble-bg: #2b2b2b; /* Slightly lighter than secondary */
+        --assistant-bubble-text: var(--text-primary);
+        --tool-call-bg: #2a2d37; /* Muted blue/gray */
+        --tool-call-border: #4a4f6b;
+        --tool-call-text: #c0c5e0;
+        --tool-result-bg: #23353e; /* Muted teal */
+        --tool-result-border: #385a6b;
+        --tool-result-text: #80deea;
+        --tool-progress-bg: #313131;
+        --tool-progress-border: #4d4d4d;
+        --tool-progress-text: var(--text-secondary);
+        --tool-success-bg: #1a3a2b; /* Darker green */
+        --tool-success-border: #2e5e49;
+        --tool-success-text: #4ade80;
+        --tool-error-bg: #3e2125; /* Darker red */
+        --tool-error-border: #6e3a3f;
+        --tool-error-text: #f47174;
+        --shadow-color: rgba(0, 0, 0, 0.2);
+        --shadow-medium: 0 4px 12px var(--shadow-color);
+        --shadow-large: 0 8px 24px var(--shadow-color);
+        --border-radius-small: 4px;
+        --border-radius-medium: 8px;
+        --border-radius-large: 16px;
+        --transition-fast: 0.15s ease-in-out;
+        --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        --font-mono: ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", "Oxygen Mono", "Ubuntu Monospace", "Source Code Pro", "Fira Mono", "Droid Sans Mono", "Courier New", monospace;
       }
-      .chat-container {
+
+      *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html {
+        font-size: 16px; /* Base font size */
+      }
+      
+      body {
+        font-family: var(--font-sans);
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        line-height: 1.6;
         display: flex;
         flex-direction: column;
-        height: 80vh;
-        background-color: #fff;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        overflow: hidden;
+        height: 100vh;
+        padding: 1.5rem;
+        max-width: 1000px; /* Max width for readability */
+        margin: 0 auto;
       }
-      .chat-messages {
-        flex: 1;
+      
+      /* Layout */
+      .chat-layout {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+        overflow: hidden; /* Prevent content spill */
+      }
+
+      .chat-header {
+        padding-bottom: 1rem;
+        flex-shrink: 0;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 1rem;
+      }
+
+      .chat-header h1 {
+        font-size: 1.75rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem; /* Space below title */
+      }
+
+      /* Available Tools Section */
+      .available-tools-section {
+        margin-bottom: 1rem;
+        flex-shrink: 0;
+      }
+      .tools-toggle {
+        font-size: 0.9rem;
+        color: var(--accent-light);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        margin-bottom: 0.5rem;
+        padding: 0.2rem 0.4rem;
+        border-radius: var(--border-radius-small);
+        transition: background-color var(--transition-fast);
+      }
+      .tools-toggle:hover { background-color: var(--bg-tertiary); }
+      .tools-toggle i { font-size: 1rem; }
+      .tools-list {
+        background-color: var(--bg-secondary);
+        border-radius: var(--border-radius-medium);
+        padding: 0.75rem;
+        max-height: 200px; /* Limit height */
         overflow-y: auto;
-        padding: 15px;
+        border: 1px solid var(--border-color);
+        scrollbar-width: thin;
+        scrollbar-color: var(--bg-tertiary) var(--bg-secondary);
       }
-      .message {
-        margin-bottom: 12px;
-        padding: 10px 15px;
-        border-radius: 18px;
-        max-width: 80%;
-        line-height: 1.4;
-        word-wrap: break-word; /* Ensure long words break */
+      .tools-list::-webkit-scrollbar { width: 8px; }
+      .tools-list::-webkit-scrollbar-track { background: var(--bg-secondary); border-radius: var(--border-radius-medium); }
+      .tools-list::-webkit-scrollbar-thumb { background-color: var(--bg-tertiary); border-radius: 4px; border: 2px solid var(--bg-secondary); }
+
+      .tool-item {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--border-color);
       }
-      .user-message {
-        background-color: #007bff;
-        color: white;
-        align-self: flex-end;
+      .tool-item:last-child { border-bottom: none; }
+      .tool-item strong {
+        font-family: var(--font-mono);
+        font-weight: 600;
+        color: var(--tool-call-text); /* Use tool call color for name */
+      }
+      .tool-item p {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        margin-top: 0.2rem;
+      }
+      .tool-item details { margin-top: 0.4rem; }
+      .tool-item summary {
+        cursor: pointer;
+        font-size: 0.8rem;
+        color: var(--accent-light);
+        display: inline-block; /* Prevent full width click */
+      }
+      .tool-item details pre {
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        padding: 0.5rem;
+        margin-top: 0.3rem;
+        font-size: 0.75rem;
+        font-family: var(--font-mono);
+        border-radius: var(--border-radius-small);
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 150px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--text-muted) transparent;
+      }
+       .tool-item details pre::-webkit-scrollbar { height: 6px; }
+       .tool-item details pre::-webkit-scrollbar-thumb { background-color: var(--text-muted); border-radius: 3px;}
+
+      
+      .chat-messages {
+        flex-grow: 1;
+        overflow-y: auto;
+        padding: 1rem 0.5rem 1rem 1rem; /* More padding on left for scrollbar */
+        margin-bottom: 1rem;
+        background-color: var(--bg-secondary);
+        border-radius: var(--border-radius-large);
+        box-shadow: var(--shadow-medium);
+        scrollbar-width: thin; /* Firefox */
+        scrollbar-color: var(--bg-tertiary) var(--bg-secondary); /* Firefox */
+      }
+      /* Webkit scrollbar */
+      .chat-messages::-webkit-scrollbar {
+        width: 8px;
+      }
+      .chat-messages::-webkit-scrollbar-track {
+        background: var(--bg-secondary);
+        border-radius: var(--border-radius-large);
+      }
+      .chat-messages::-webkit-scrollbar-thumb {
+        background-color: var(--bg-tertiary);
+        border-radius: 4px;
+        border: 2px solid var(--bg-secondary);
+      }
+
+      .chat-input-area {
+        flex-shrink: 0;
+        position: relative; /* For focus ring */
+      }
+
+      /* Message Structure */
+      .message-wrapper {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 1.5rem;
+        width: 100%; /* Full width */
+      }
+
+      .message-content {
+        padding: 0.75rem 1rem;
+        border-radius: var(--border-radius-medium);
+        word-wrap: break-word;
+        max-width: 100%; /* Ensure content wraps */
+        transition: background-color var(--transition-fast);
+      }
+      
+      .message-meta {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-top: 0.3rem;
+        padding-left: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      /* User Message */
+      .user-message .message-content {
+        background-color: var(--user-bubble-bg);
+        color: var(--user-bubble-text);
+        border-bottom-right-radius: var(--border-radius-small);
+      }
+      .user-message .message-meta {
+        justify-content: flex-end; /* Align meta right */
+        padding-right: 0.5rem;
+        padding-left: 0;
+      }
+
+      /* Assistant Message */
+      .assistant-message .message-content {
+        background-color: var(--assistant-bubble-bg);
+        color: var(--assistant-bubble-text);
+        border-bottom-left-radius: var(--border-radius-small);
+      }
+
+      /* Tool Messages (Call & Result) */
+      .tool-related {
+        padding-left: 1rem; /* Indent tool messages */
+        margin-top: 0.5rem;
+        margin-bottom: 1rem;
+        position: relative;
+      }
+      .tool-related::before { /* Vertical connector line */
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background-color: var(--border-color);
+        border-radius: 1px;
+      }
+      
+      .tool-call-message, .tool-result-message {
+        border: 1px solid var(--tool-call-border);
+        border-radius: var(--border-radius-medium);
+        padding: 0.75rem 1rem;
+        font-family: var(--font-mono);
+        font-size: 0.875em;
+        margin-bottom: 0.5rem;
+        width: 100%;
+      }
+      .tool-call-message {
+        background-color: var(--tool-call-bg);
+        color: var(--tool-call-text);
+        border-color: var(--tool-call-border);
+      }
+      .tool-result-message {
+        background-color: var(--tool-result-bg);
+        color: var(--tool-result-text);
+        border-color: var(--tool-result-border);
+      }
+      
+      .tool-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .tool-title {
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .tool-title i { font-size: 1rem; }
+      .tool-meta {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      /* Tool Status Display */
+      .tool-status-display {
+        margin-top: 0.75rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.8rem;
+        color: var(--text-primary);
+        background-color: var(--tool-progress-bg);
+        border: 1px solid var(--tool-progress-border);
+        border-radius: var(--border-radius-medium);
+        padding: 0.5rem 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        position: relative;
+        overflow: hidden;
+        animation: tool-pulse 2.5s infinite ease-in-out;
+      }
+      @keyframes tool-pulse {
+        0% { background-color: var(--tool-progress-bg); }
+        50% { background-color: color-mix(in srgb, var(--tool-progress-bg) 85%, var(--accent-color) 15%); }
+        100% { background-color: var(--tool-progress-bg); }
+      }
+      .tool-status-display::before { /* Left accent bar */
+        content: '';
+        position: absolute;
+        left: 0; top: 0; bottom: 0;
+        width: 4px;
+        background-color: var(--accent-color);
+      }
+      .tool-status-icon { font-size: 1rem; }
+      .tool-status-text { flex: 1; word-break: break-word; }
+      .tool-status-duration {
+        font-size: 0.7rem;
+        color: var(--text-muted);
         margin-left: auto;
-        border-bottom-right-radius: 4px;
+        padding-left: 0.5rem;
       }
-      .assistant-message {
-        background-color: #e9ecef;
-        color: #333;
-        align-self: flex-start;
-        border-bottom-left-radius: 4px;
+
+      /* Tool Progress Details */
+      .tool-progress-toggle {
+        margin-top: 0.5rem;
+        margin-bottom: 0.25rem;
+        font-size: 0.75rem;
+        color: var(--accent-light);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.2rem 0.4rem;
+        border-radius: var(--border-radius-small);
+        transition: background-color var(--transition-fast);
       }
-      .tool-call-message, .tool-result-message, .tool-progress-message {
-        background-color: #fff3cd;
-        color: #664d03;
-        border: 1px solid #ffecb5;
-        font-family: monospace;
+      .tool-progress-toggle:hover { background-color: var(--bg-tertiary); }
+      .tool-progress-toggle i { font-size: 0.9rem; }
+      .tool-progress-toggle[data-expanded="true"] .toggle-expand { display: none; }
+      .tool-progress-toggle[data-expanded="false"] .toggle-collapse { display: none; }
+
+      .tool-progress-container {
+        border-left: 2px solid var(--accent-color);
+        padding-left: 0.75rem;
+        margin-top: 0.5rem;
+        max-height: 250px; /* Limit height */
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--bg-tertiary) transparent;
+      }
+      .tool-progress-container::-webkit-scrollbar { width: 6px; }
+      .tool-progress-container::-webkit-scrollbar-thumb { background-color: var(--bg-tertiary); border-radius: 3px; }
+
+      .tool-progress-message {
+        background-color: var(--tool-progress-bg);
+        color: var(--tool-progress-text);
+        border: 1px solid var(--tool-progress-border);
+        border-radius: var(--border-radius-medium);
+        padding: 0.6rem 0.8rem;
+        font-family: var(--font-mono);
+        font-size: 0.8em;
+        margin-bottom: 0.5rem;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        word-wrap: break-word;
+        white-space: pre-wrap; /* Respect whitespace in progress */
+      }
+
+      /* Tool Status Pill */
+      .tool-status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: var(--border-radius-small);
+        font-size: 0.7rem;
+        font-weight: 500;
+      }
+      .tool-status-running { background-color: var(--tool-progress-bg); color: var(--tool-progress-text); border: 1px solid var(--tool-progress-border); }
+      .tool-status-completed { background-color: var(--tool-success-bg); color: var(--tool-success-text); border: 1px solid var(--tool-success-border); }
+      .tool-status-error { background-color: var(--tool-error-bg); color: var(--tool-error-text); border: 1px solid var(--tool-error-border); }
+
+      .tool-error-message {
+        background-color: var(--tool-error-bg);
+        color: var(--tool-error-text);
+        border: 1px solid var(--tool-error-border);
+        border-radius: var(--border-radius-medium);
+        padding: 0.6rem 0.8rem;
+        font-family: var(--font-mono);
+        font-size: 0.8em;
+        margin-top: 0.5rem;
+        word-wrap: break-word;
+        white-space: pre-wrap;
+      }
+      .tool-error-message i { margin-right: 0.3rem; }
+
+      /* Code Blocks */
+      .code-block {
+        background-color: var(--bg-tertiary);
+        border-radius: var(--border-radius-medium);
+        margin: 0.5rem 0;
+        font-family: var(--font-mono);
         font-size: 0.9em;
-        padding: 8px 12px;
-        margin: 5px 0 10px 40px; /* Indent tool messages */
-        max-width: calc(80% - 40px);
-        align-self: flex-start;
-        border-radius: 8px;
-        overflow-x: auto; /* Allow scrolling for wide tool outputs */
+        overflow: hidden; /* Clip content */
+        border: 1px solid var(--border-color);
       }
-      .tool-call-message strong, .tool-result-message strong, .tool-progress-message strong {
-        color: #5b3a00;
-        display: block; /* Make titles distinct */
-        margin-bottom: 4px;
+      .code-block-header {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        background-color: rgba(0,0,0,0.1); /* Slightly darker header */
+        border-bottom: 1px solid var(--border-color);
       }
+      .code-block pre {
+        margin: 0;
+        padding: 0.8rem;
+        overflow-x: auto; /* Horizontal scroll for long lines */
+        white-space: pre; /* Keep formatting but allow scroll */
+        scrollbar-width: thin;
+        scrollbar-color: var(--text-muted) transparent;
+      }
+      .code-block pre::-webkit-scrollbar { height: 6px; }
+      .code-block pre::-webkit-scrollbar-thumb { background-color: var(--text-muted); border-radius: 3px;}
+
+      /* Input Form */
       .message-form {
         display: flex;
-        padding: 15px;
-        border-top: 1px solid #dee2e6;
-        background-color: #f8f9fa;
+        align-items: flex-end; /* Align button to bottom */
+        padding: 0.75rem;
+        background-color: var(--bg-secondary);
+        border-radius: var(--border-radius-large);
+        box-shadow: var(--shadow-medium);
+        border: 1px solid var(--border-color);
+        transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+        position: relative; /* Needed for focus ring */
       }
-      input[type="text"] {
-        flex: 1;
-        padding: 10px;
-        border: 1px solid #ced4da;
-        border-radius: 20px;
-        margin-right: 10px;
+      .message-form:focus-within {
+        border-color: var(--focus-ring);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 20%, transparent), var(--shadow-medium);
       }
-      button {
-        padding: 10px 20px;
-        background-color: #007bff;
+      .message-input-container {
+        flex-grow: 1;
+        margin-right: 0.75rem;
+      }
+      .message-input {
+        width: 100%;
+        min-height: 2.5rem; /* Approx 1 line height + padding */
+        max-height: 150px; /* Limit growth */
+        padding: 0.6rem 0.8rem;
+        background-color: transparent;
+        color: var(--text-primary);
+        border: none;
+        outline: none;
+        resize: none;
+        overflow-y: auto; /* Add scroll if max height reached */
+        font-family: inherit;
+        font-size: 1rem;
+        line-height: 1.5;
+        scrollbar-width: thin;
+        scrollbar-color: var(--bg-tertiary) transparent;
+      }
+      .message-input::-webkit-scrollbar { width: 6px; }
+      .message-input::-webkit-scrollbar-thumb { background-color: var(--bg-tertiary); border-radius: 3px;}
+      .message-input::placeholder { color: var(--text-secondary); }
+      
+      .send-button {
+        padding: 0.6rem 1rem;
+        background-color: var(--accent-color);
         color: white;
         border: none;
-        border-radius: 20px;
+        border-radius: var(--border-radius-medium);
         cursor: pointer;
-        transition: background-color 0.2s;
+        transition: background-color var(--transition-fast), transform var(--transition-fast);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        font-weight: 500;
+        height: 2.5rem; /* Match initial textarea height */
+        flex-shrink: 0;
       }
-      button:hover:not(:disabled) {
-        background-color: #0056b3;
-      }
-      button:disabled {
-        background-color: #6c757d;
-        cursor: not-allowed;
-      }
-      .thinking {
+      .send-button:hover:not(:disabled) { background-color: var(--accent-light); transform: translateY(-1px); }
+      .send-button:active:not(:disabled) { transform: translateY(0px); }
+      .send-button:disabled { background-color: var(--text-muted); cursor: not-allowed; opacity: 0.7; }
+      .send-button i { font-size: 1.1rem; }
+
+      /* Loading Indicator */
+      .thinking-indicator {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        margin-bottom: 1.5rem;
         font-style: italic;
-        color: #6c757d;
-        align-self: flex-start;
-        padding: 10px 15px;
+        color: var(--text-secondary);
+        background-color: var(--assistant-bubble-bg);
+        border-radius: var(--border-radius-medium);
+        border-bottom-left-radius: var(--border-radius-small);
+        width: fit-content; /* Don't take full width */
       }
-      .debug-controls {
-          padding: 0 15px 10px;
-      }
-      .debug-info {
-        font-size: 0.85em;
-        color: #495057;
-        background-color: #f1f3f5;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        margin-top: 10px;
-        padding: 10px;
-        max-height: 200px;
-        overflow-y: auto;
-      }
-      .debug-toggle {
-        cursor: pointer;
-        color: #007bff;
-        text-decoration: underline;
-        font-size: 0.9em;
+      .thinking-dots span {
         display: inline-block;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background-color: var(--text-secondary);
+        margin: 0 1px;
+        animation: thinking-blink 1.4s infinite ease-in-out both;
       }
-      pre {
-        white-space: pre-wrap; /* Wrap long lines in pre tags */
-        word-wrap: break-word;
+      .thinking-dots span:nth-child(1) { animation-delay: -0.32s; }
+      .thinking-dots span:nth-child(2) { animation-delay: -0.16s; }
+      @keyframes thinking-blink {
+        0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+        40% { opacity: 1; transform: scale(1); }
       }
+
+      /* Utility */
+      .hidden { display: none !important; }
+
+      /* Hypermedia specific (basic placeholder) */
+      .hypermedia-container {
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-medium);
+        margin-top: 0.5rem;
+        overflow: hidden;
+        background-color: var(--bg-tertiary); /* Differentiate slightly */
+      }
+      .hypermedia-container .code-block-header { background: rgba(0,0,0,0.15); }
+      .hypermedia-container > div:not(.code-block-header) { padding: 0.8rem; }
+      /* Basic table styling for hypermedia */
+      .hypermedia-table table { width: 100%; border-collapse: collapse; }
+      .hypermedia-table th, .hypermedia-table td { padding: 0.5rem; border: 1px solid var(--border-color); text-align: left; }
+      .hypermedia-table th { background-color: rgba(0,0,0,0.2); font-weight: 600; }
+      /* Basic form styling */
+      .hypermedia-form form { display: flex; flex-direction: column; gap: 0.75rem; }
+      .hypermedia-form .form-field { display: flex; flex-direction: column; gap: 0.25rem; }
+      .hypermedia-form label { font-size: 0.8rem; color: var(--text-secondary); }
+      .hypermedia-form input, .hypermedia-form select, .hypermedia-form button {
+        padding: 0.5rem;
+        border-radius: var(--border-radius-small);
+        border: 1px solid var(--border-color);
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+        font-size: 0.9rem;
+      }
+      .hypermedia-form button { background-color: var(--accent-color); color: white; cursor: pointer; margin-top: 0.5rem; }
+      .hypermedia-form button:hover { background-color: var(--accent-light); }
+
     </style>
   </head>
   <body x-data="chatApp()" x-init="init()">
-    <h1 style="text-align: center; margin-bottom: 20px;">Tool Server Chat</h1>
-    
-    <div class="chat-container">
-      <div class="chat-messages" id="chat-messages" x-ref="chatMessages">
-        <template x-for="(message, index) in messages" :key="message.id || index">
-          <div :class="getMessageClass(message)">
-            <!-- User/Assistant Text -->
-            <template x-if="message.role === 'user' || (message.role === 'assistant' && message.type === 'text')">
-              <div x-html="formatMessage(message.content)"></div>
+
+  <div class="chat-layout">
+    <header class="chat-header">
+      <h1>.workspace</h1>
+      <!-- Available Tools Section -->
+      <div class="available-tools-section">
+        <div class="tools-toggle" @click="showAvailableTools = !showAvailableTools">
+          <i :class="showAvailableTools ? 'lucide-chevron-down' : 'lucide-chevron-right'"></i>
+          <span x-text="showAvailableTools ? 'Hide Available Tools' : 'Show Available Tools'"></span>
+          (<span x-text="availableTools.length"></span>)
+    </div>
+        <div class="tools-list" x-show="showAvailableTools" x-transition>
+          <template x-if="availableTools.length === 0">
+            <p>No tools available.</p>
+          </template>
+          <template x-for="tool in availableTools" :key="tool.name">
+            <div class="tool-item">
+              <strong><i class="lucide-wrench" style="font-size: 0.9em; margin-right: 0.2em;"></i><span x-text="tool.name"></span></strong>
+              <p x-text="tool.description"></p>
+              <template x-if="tool.usageExamples && tool.usageExamples.length > 0">
+                <details>
+                  <summary>Usage Examples</summary>
+                  <pre x-text="tool.usageExamples"></pre>
+                </details>
+              </template>
+        </div>
+          </template>
+        </div>
+      </div>
+    </header>
+        
+    <main class="chat-messages" x-ref="chatMessages">
+      <template x-for="message in messages" :key="message.id">
+        <div :class="getMessageWrapperClass(message)">
+            <!-- User Message -->
+            <template x-if="message.role === 'user'">
+            <div class="message-content" x-html="formatMessageContent(message.content)"></div>
+                <div class="message-meta">
+              <span>You</span> &#183; <span x-text="formatTimestamp(message.timestamp)"></span>
+              </div>
+            </template>
+            
+            <!-- Assistant Text Message -->
+            <template x-if="message.role === 'assistant' && message.type === 'text'">
+            <div class="message-content" x-html="formatMessageContent(message.content)"></div>
+                <div class="message-meta">
+              <span>Assistant</span> &#183; <span x-text="formatTimestamp(message.timestamp)"></span>
+              </div>
             </template>
             
             <!-- Tool Call -->
             <template x-if="message.type === 'tool_call'">
+            <div class="tool-related">
               <div class="tool-call-message">
-                <div><strong>Tool Call:</strong> <span x-text="message.toolName"></span> (<span x-text="message.toolCallId?.substring(0, 8) || 'N/A'"></span>)</div>
-                <strong>Args:</strong>
-                <pre x-text="JSON.stringify(message.args, null, 2)"></pre>
+                <div class="tool-header">
+                  <div class="tool-title">
+                    <i class="lucide-tool"></i>
+                    <span x-text="message.toolName"></span>
+                  </div>
+                  <div class="tool-meta" x-show="getToolData(message.toolCallId)?.status">
+                    <span :class="getToolStatusClass(message.toolCallId)" x-text="getToolStatusText(message.toolCallId)"></span>
+                    <span x-show="getToolDuration(message.toolCallId)">
+                      <i class="lucide-clock" style="font-size: 0.8em;"></i> <span x-text="getToolDuration(message.toolCallId)"></span>
+                    </span>
+                  </div>
+                </div>
+                
+                <div class="tool-content">
+                  <div class="code-block">
+                    <div class="code-block-header">Arguments</div>
+                    <pre x-text="JSON.stringify(message.args, null, 2)"></pre>
+                  </div>
+                </div>
+                
+                <!-- Tool Status Display (while running) -->
+                <div class="tool-status-display" x-show="getToolData(message.toolCallId)?.isRunning" x-transition>
+                  <i class="lucide-loader tool-status-icon"></i>
+                  <div class="tool-status-text">
+                    <span x-text="getLatestProgressMessage(message.toolCallId) || 'Running tool...'"></span>
+                  </div>
+                  <div class="tool-status-duration">
+                    <span x-text="getToolDuration(message.toolCallId) || '0.0s'"></span>
+                  </div>
+                </div>
+
+                <!-- Progress Details Toggle -->
+                <div class="tool-progress-toggle"
+                     x-show="getToolData(message.toolCallId)?.progress.length > 0"
+                     @click="toggleProgressDetails($event, message.toolCallId)"
+                     :data-expanded="toolProgressExpanded[message.toolCallId] ?? false">
+                  <i class="lucide-chevron-down toggle-expand"></i>
+                  <i class="lucide-chevron-up toggle-collapse"></i>
+                  <span class="toggle-expand">Show Progress</span>
+                  <span class="toggle-collapse">Hide Progress</span>
+                </div>
+
+                <!-- Progress Messages Container -->
+                <div class="tool-progress-container"
+                     x-show="toolProgressExpanded[message.toolCallId]"
+                     x-transition:enter="transition ease-out duration-100"
+                     x-transition:enter-start="opacity-0 -translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     x-transition:leave="transition ease-in duration-75"
+                     x-transition:leave-start="opacity-100 translate-y-0"
+                     x-transition:leave-end="opacity-0 -translate-y-1">
+                  <template x-for="(progress, idx) in getToolData(message.toolCallId)?.progress" :key="idx">
+                    <div class="tool-progress-message">
+                      <div x-show="typeof progress === 'object' && progress.html" x-html="progress.html"></div>
+                      <div x-show="typeof progress !== 'object' || !progress.html" x-text="formatProgressMessage(progress)"></div>
+                    </div>
+                  </template>
+                </div>
+                
+                <!-- Tool Error Display -->
+                <div x-show="getToolData(message.toolCallId)?.error" class="tool-error-message" x-transition>
+                    <i class="lucide-alert-circle"></i>
+                  <span x-text="formatToolError(getToolData(message.toolCallId)?.error)"></span>
+                  </div>
+                </div>
               </div>
             </template>
             
             <!-- Tool Result -->
             <template x-if="message.type === 'tool_result'">
+             <div class="tool-related">
               <div class="tool-result-message">
-                <div><strong>Tool Result:</strong> (<span x-text="message.toolCallId?.substring(0, 8) || 'N/A'"></span>)</div>
-                <pre x-text="JSON.stringify(message.result, null, 2)"></pre>
-              </div>
-            </template>
-            
-            <!-- Assistant Message Annotations (Tool Progress) -->
-            <template x-if="message.role === 'assistant' && message.annotations && message.annotations.length > 0">
-              <div>
-                <template x-for="(annotation, annotIndex) in message.annotations" :key="annotIndex">
-                  <template x-if="annotation.tool_progress">
-                    <div class="tool-progress-message">
-                      <div><strong>Tool Progress:</strong> <span x-text="annotation.tool_progress.toolName"></span> (<span x-text="annotation.tool_progress.toolCallId?.substring(0, 8) || 'N/A'"></span>)</div>
-                      <pre x-text="JSON.stringify(annotation.tool_progress.message, null, 2)"></pre>
+                <div class="tool-header">
+                  <div class="tool-title">
+                    <i class="lucide-check-circle"></i>
+                    <span>Result</span>
+                  </div>
+                  <div class="tool-meta">
+                    <span>ID: <span x-text="message.toolCallId?.substring(0, 8) || 'N/A'"></span></span>
+                  </div>
+                </div>
+                
+                  <!-- Standard Result -->
+                <div x-show="!isHypermediaResult(message.result)" class="tool-content">
+                    <div class="code-block">
+                      <div class="code-block-header">Output</div>
+                  <pre x-text="formatToolResult(message.result)"></pre>
                     </div>
-                  </template>
-                   <template x-if="annotation.tool_completion">
-                     <div class="tool-progress-message" style="border-color: #a3cfbb; background-color: #d1e7dd; color: #0a3622;">
-                       <div><strong>Tool Completed:</strong> <span x-text="annotation.tool_completion.toolName"></span> (<span x-text="annotation.tool_completion.toolCallId?.substring(0, 8) || 'N/A'"></span>)</div>
-                     </div>
-                   </template>
-                </template>
+                </div>
+                
+                <!-- Hypermedia Result -->
+                <div x-show="isHypermediaResult(message.result)" class="tool-content">
+                  <div class="hypermedia-container" x-html="renderHypermedia(message.result)"></div>
+                  </div>
+                </div>
               </div>
             </template>
           </div>
         </template>
         
         <!-- Loading Indicator -->
-        <div x-show="isLoading" class="message thinking">
-          Thinking...
-        </div>
-      </div>
+      <div x-show="isLoading" class="thinking-indicator" x-transition>
+          <span>Thinking</span>
+        <div class="thinking-dots"><span></span><span></span><span></span></div>
+          </div>
+    </main>
       
-      <!-- Input Form -->
+    <footer class="chat-input-area">
       <form class="message-form" @submit.prevent="sendMessage">
-        <input 
-          type="text" 
-          x-model="userInput" 
-          placeholder="Type your message here..."
-          :disabled="isLoading"
-          aria-label="Chat input"
-          x-ref="chatInput"
-          @keydown.enter.prevent="sendMessage"
-        />
-        <button type="submit" :disabled="isLoading || !userInput.trim()">Send</button>
-      </form>
-      
-      <!-- Debug Area -->
-      <div class="debug-controls">
-        <span class="debug-toggle" @click="showDebug = !showDebug" x-text="showDebug ? 'Hide Debug Info' : 'Show Debug Info'"></span>
-        <div x-show="showDebug && streamData.length > 0" class="debug-info">
-          <h4>Raw Stream Parts:</h4>
-          <pre x-text="JSON.stringify(streamData, null, 2)"></pre>
+        <div class="message-input-container">
+          <textarea 
+            x-ref="chatInput"
+            x-model="userInput" 
+            placeholder="Type your message... (Shift+Enter for new line)"
+            :disabled="isLoading"
+            class="message-input"
+            rows="1"
+            @keydown.enter="handleEnterKey"
+            @input="autoResizeTextarea"
+            aria-label="Chat message input"
+          ></textarea>
         </div>
-      </div>
+        <button type="submit" class="send-button" :disabled="isLoading || !userInput.trim()">
+          <i class="lucide-send"></i>
+        </button>
+      </form>
+    </footer>
     </div>
     
     <script>
       /**
-       * Alpine.js component logic for the chat application.
+     * Alpine.js component logic for the .workspace chat UI.
+     * Handles message display, input, streaming responses, and tool state management.
        */
       function chatApp() {
         return {
+        // --- State ---
           /** @type {Array<object>} messages - Array storing the chat message history. */
           messages: [],
-          /** @type {Array<object>} streamData - Array storing raw Vercel AI stream parts for debugging. */
-          streamData: [],
           /** @type {string} userInput - Current value of the user input field. */
           userInput: '',
           /** @type {boolean} isLoading - Flag indicating if a response is currently being streamed. */
           isLoading: false,
-          /** @type {string|null} currentAssistantMessageId - ID of the current assistant message being built. */
+        /** @type {string|null} currentAssistantMessageId - ID of the assistant message being built during streaming. */
           currentAssistantMessageId: null,
-          /** @type {boolean} showDebug - Flag to control visibility of the debug area. */
-          showDebug: false,
+          /** @type {boolean} showAvailableTools - Controls visibility of the tools list */
+          showAvailableTools: false,
+          /** @type {Array<object>} availableTools - List of tools fetched from the API */
+          availableTools: [],
+          /** @type {string|null} toolFetchError - Stores error message if fetching tools fails */
+          toolFetchError: null,
+        /**
+         * @typedef {object} ToolState
+         * @property {'running'|'completed'|'error'} status - Current status of the tool.
+         * @property {boolean} isRunning - Convenience flag for display.
+         * @property {number} startTime - Timestamp when the tool call started.
+         * @property {number|null} endTime - Timestamp when the tool call finished.
+         * @property {Array<any>} progress - Array of progress messages/objects.
+         * @property {any|null} error - Error details if the tool failed.
+         */
+        /** @type {Record<string, ToolState>} toolData - Stores state for each tool call, keyed by toolCallId. */
+        toolData: {},
+        /** @type {Record<string, boolean>} toolProgressExpanded - Tracks whether progress details are shown for each tool. */
+        toolProgressExpanded: {},
 
-          /**
-           * Initializes the chat application.
+        // --- Initialization ---
+        /**
+         * Initializes the chat application state and watchers.
+         * Fetches available tools from the backend.
            */
           init() {
-            console.log('Chat app initialized.');
-            this.$nextTick(() => this.focusInput()); // Focus input on initial load
-          },
+            console.log('.workspace UI Initialized');
+            this.fetchAvailableTools(); // Fetch tools on init
 
-          /**
-           * Generates a unique ID for messages.
-           * @param {string} prefix - Optional prefix for the ID.
-           * @returns {string} A unique ID string.
-           */
-          generateId(prefix = 'msg') {
-              return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-          },
+            // Restore messages from localStorage if desired (example)
+            // this.messages = JSON.parse(localStorage.getItem('chatMessages') || '[]');
 
-          /**
-           * Sends the user's message to the backend and processes the streamed response.
-           */
-          sendMessage() {
-            const trimmedInput = this.userInput.trim();
-            if (!trimmedInput || this.isLoading) return; // Prevent sending empty or while loading
+            this.$watch('messages', (newMessages) => {
+              // Persist messages (example)
+              // localStorage.setItem('chatMessages', JSON.stringify(newMessages));
+              this.$nextTick(() => this.scrollToBottom());
+            });
 
-            const userMessage = {
-              id: this.generateId('user'),
-              role: 'user',
-              content: trimmedInput,
-              type: 'text' // Add type for consistency
-            };
+            this.$watch('userInput', () => {
+              this.$nextTick(() => this.autoResizeTextarea());
+            });
             
-            this.messages.push(userMessage);
-            this.isLoading = true;
-            this.userInput = ''; // Clear input after adding to messages
-            this.streamData = []; // Clear debug data for new message
-            this.currentAssistantMessageId = null; // Reset current assistant message ID
-
-            this.scrollToBottom();
-            
-            // Prepare messages for the API, conforming to CoreMessage structure
-            const apiMessages = this.prepareApiMessages();
-
-            // --- DEBUGGING --- 
-            console.log('Sending API Messages:', JSON.stringify(apiMessages, null, 2));
-            // --- END DEBUGGING ---
-
-            fetch('/ai/chat', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                // modelName: 'gpt-4o', // Example: you might want to make this configurable
-                messages: apiMessages // Send the correctly formatted messages
-              })
-            })
-            .then(response => {
-              if (!response.ok) {
-                // Attempt to read error details from the response body
-                return response.text().then(text => {
-                    throw new Error(`Network response was not ok: ${response.status} ${response.statusText} - ${text}`);
-                });
-              }
-              if (!response.body) {
-                  throw new Error('Response body is null');
-              }
-              const reader = response.body.getReader();
-              const decoder = new TextDecoder();
-              
-              // Start processing the stream
-              return this.processStreamReader(reader, decoder);
-            })
-            .catch(error => {
-              console.error('Error sending message:', error);
-              this.handleError(`Sorry, there was an error sending the message: ${error.message}`);
+            this.$nextTick(() => {
+              this.focusInput();
+              this.autoResizeTextarea();
+              this.scrollToBottom(); // Scroll down on initial load
             });
           },
 
           /**
-           * Prepares the message history array for the API request,
-           * ensuring it conforms to the expected CoreMessage structure,
-           * including the workaround for tool results.
-           * @returns {Array<object>} The array of messages formatted for the API.
+           * Fetches the list of available tools from the /tools endpoint.
            */
-          prepareApiMessages() {
-              return this.messages.map(m => {
-                  // Basic user/assistant text message
-                  if (m.role === 'user' || (m.role === 'assistant' && m.type === 'text')) {
-                      return { role: m.role, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) };
-                  }
-                  // Assistant message that includes a tool call
-                  if (m.role === 'assistant' && m.type === 'tool_call') {
-                      const resultMsg = this.messages.find(resMsg =>
-                          resMsg.type === 'tool_result' && resMsg.toolCallId === m.toolCallId
-                      );
-                      if (!resultMsg) {
-                         console.warn(`Tool call (id: ${m.id}, toolCallId: ${m.toolCallId}) found without a corresponding result in local history when sending.`);
-                         // Send only the invocation part if no result is found (might still error, but best effort)
-                         return {
-                              role: 'assistant', content: typeof m.content === 'string' ? m.content : '',
-                              toolInvocations: [{ toolCallId: m.toolCallId, toolName: m.toolName, args: m.args }]
-                         };
-                      }
-                      // IMPORTANT HACK: Attach result directly to invocation for internal SDK check
-                      return {
-                          role: 'assistant', content: typeof m.content === 'string' ? m.content : '',
-                          toolInvocations: [{
-                              toolCallId: m.toolCallId, toolName: m.toolName, args: m.args,
-                              result: resultMsg.result // Add result here
-                          }]
-                      };
-                  }
-                  // Tool result message - Filter this out as the result is now attached above
-                  if (m.role === 'tool' && m.type === 'tool_result') {
-                      console.log(`Filtering out tool_result message (toolCallId: ${m.toolCallId}) as result is attached to invocation.`);
-                      return null;
-                  }
-                  console.warn('Filtering out unexpected message structure during API mapping:', m);
-                  return null;
-              }).filter(m => m !== null);
+          async fetchAvailableTools() {
+            this.toolFetchError = null; // Reset error state
+            try {
+              const response = await fetch('/tools'); // Use GET by default
+              if (!response.ok) {
+                throw new Error(`Failed to fetch tools: ${response.status} ${response.statusText}`);
+              }
+              const tools = await response.json();
+              if (!Array.isArray(tools)) {
+                  throw new Error('Invalid format for tools list received from API.');
+              }
+              this.availableTools = tools;
+              console.log('Fetched available tools:', this.availableTools);
+            } catch (error) {
+              console.error('Error fetching available tools:', error);
+              this.toolFetchError = error.message || 'Could not fetch tools.';
+              this.availableTools = []; // Ensure it's an empty array on error
+            }
+          },
+
+        // --- Core Chat Logic ---
+        /**
+         * Sends the user's message to the backend API, refetches tools,
+         * and processes the streamed response.
+           */
+          sendMessage() {
+            const content = this.userInput.trim();
+            if (!content || this.isLoading) return;
+
+            const userMessage = this.createUserMessage(content);
+            this.addMessage(userMessage);
+
+            this.isLoading = true;
+            this.userInput = '';
+            this.currentAssistantMessageId = null; // Reset for new response stream
+
+            // --- Refetch tools when sending a message ---
+            this.fetchAvailableTools();
+            // --------------------------------------------
+            
+            const apiMessages = this.prepareApiMessages();
+            console.log('Sending API Messages:', JSON.stringify(apiMessages.slice(-5), null, 2)); // Log last 5 for brevity
+
+            fetch('/ai/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                modelName: 'openai:gpt-4o-mini', // TODO: Make configurable?
+                input: { messages: apiMessages }
+              })
+            })
+            .then(response => this.handleApiResponse(response))
+            .catch(error => {
+              console.error('Fetch Error:', error);
+              this.handleError(`Network error: ${error.message}`);
+            });
           },
 
           /**
-           * Recursively processes the ReadableStream from the fetch response.
+         * Handles the initial API response, checking status and starting stream processing.
+         * @param {Response} response - The Fetch API Response object.
+         */
+        async handleApiResponse(response) {
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => 'Could not read error details.');
+                throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+            if (!response.body) {
+                throw new Error('API response body is null.');
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            await this.processStreamReader(reader, decoder);
+          },
+
+          /**
+         * Recursively reads and processes chunks from the response stream.
            * @param {ReadableStreamDefaultReader} reader - The stream reader.
            * @param {TextDecoder} decoder - The text decoder.
+         * @param {string} [buffer=''] - Internal buffer for partial lines.
            */
-          processStreamReader(reader, decoder) {
-            reader.read().then(({ done, value }) => {
+        async processStreamReader(reader, decoder, buffer = '') {
+            try {
+                const { done, value } = await reader.read();
+
               if (done) {
+                    if (buffer.trim()) this.parseAndHandleStreamPart(buffer); // Process remaining buffer
                 this.finalizeStream();
                 return;
               }
 
-              const chunk = decoder.decode(value, { stream: true });
-              const lines = chunk.split('\n'); // Vercel protocol uses newline as delimiter
+                buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep last (potentially partial) line
               
               lines.forEach(line => {
-                if (!line) return; // Skip empty lines
-                
-                try {
-                  this.parseAndHandleStreamPart(line);
-                } catch (e) {
-                  console.error('Error processing stream line:', e, '\nLine:', line);
-                  // Optionally add an error indicator in the UI or debug log
-                  this.streamData.push({ error: 'Processing Error', line: line, details: e.message });
-                }
-              });
+                  if (line.trim()) this.parseAndHandleStreamPart(line);
+                });
 
-              // Scroll to bottom after processing chunk
-              this.scrollToBottom();
+                this.scrollToBottom(); // Scroll as chunks arrive
+                await this.processStreamReader(reader, decoder, buffer); // Continue reading
 
-              // Continue reading the stream
-              this.processStreamReader(reader, decoder); // Recurse
-              
-            }).catch(error => {
-                console.error('Error reading stream:', error);
-                this.handleError('Sorry, there was an error reading the response.');
-            });
+            } catch (error) {
+                console.error('Stream Reading Error:', error);
+                this.handleError(`Error reading response stream: ${error.message}`);
+            }
           },
 
           /**
-           * Parses a single line from the stream according to the Vercel AI protocol
-           * and calls the appropriate handler.
+         * Parses a single line from the stream according to the Vercel AI protocol.
            * @param {string} line - A single line from the stream.
            */
           parseAndHandleStreamPart(line) {
-            // Match the Vercel AI protocol format: TYPE_ID:CONTENT_JSON\n
+            // Vercel AI protocol format: TYPE_ID:CONTENT_JSON\n
             const match = line.match(/^([a-zA-Z0-9]+):(.*)$/);
-            if (match) {
+            if (!match) {
+                console.warn('Stream line ignored (non-protocol format):', line);
+                return;
+            }
+
               const typeId = match[1];
               const contentStr = match[2];
               let content;
+
               try {
-                // Type 3 (Error) is a raw string, all others are expected to be JSON.
-                // Type 0 (Text) specifically contains a JSON *string* (e.g., "Hello").
+                // Type '3' (Error) is raw string, others are JSON. Type '0' (Text) is a JSON string.
                 content = (typeId === '3') ? contentStr : JSON.parse(contentStr);
               } catch (e) {
-                // Handle cases where JSON parsing fails unexpectedly
-                console.warn(`Failed to parse JSON for type '${typeId}', treating as string. Line: ${line}`, e);
-                // Fallback to using the raw string content if JSON parsing fails
-                // This might happen if the protocol is slightly off or for unexpected types.
-                content = contentStr; 
-              }
-              
-              // Store raw part details for debugging (using the original string for content)
-              this.streamData.push({ typeId, rawContent: contentStr }); 
-              
-              // Handle the parsed part
-              this.handleStreamPart(typeId, content);
-            } else {
-                 console.warn('Stream line does not match Vercel AI protocol:', line);
-                 this.streamData.push({ warning: 'Non-protocol line', line: line });
+                console.warn(`Failed to parse JSON for type '${typeId}', using raw string. Line: ${line}`, e);
+                content = contentStr; // Fallback for unexpected formats
             }
+
+            // console.log(`Stream Part - Type: ${typeId}, Content:`, content); // Debug logging
+              this.handleStreamPart(typeId, content);
           },
           
           /**
-           * Handles a parsed stream part based on its type ID.
-           * Updates the messages array accordingly.
-           * @param {string} typeId - The Vercel AI stream part type ID (e.g., '0', '8', '9', 'a').
+         * Handles a parsed stream part based on its type ID, updating UI state.
+         * @param {string} typeId - The Vercel AI stream part type ID (e.g., '0', '9', 'a').
            * @param {any} content - The parsed content of the stream part.
            */
           handleStreamPart(typeId, content) {
-            let lastMessage = this.messages.length > 0 ? this.messages[this.messages.length - 1] : null;
-            let assistantMessage = this.currentAssistantMessageId
-              ? this.messages.find(m => m.id === this.currentAssistantMessageId)
-              : null;
+            if (typeId === '2' || typeId === '8') {
+                console.log(`Raw Stream Content - Type: ${typeId}`, JSON.stringify(content));
+            }
+            let assistantMessage = this.findMessageById(this.currentAssistantMessageId);
 
-            switch(typeId) {
-              // Text Part: 0:string\n
+            switch (typeId) {
+                // Text Part: 0:"string"
               case '0':
                 if (!assistantMessage) {
-                    // First text part, create the assistant message object
-                    this.currentAssistantMessageId = this.generateId('assistant');
-                    assistantMessage = {
-                        id: this.currentAssistantMessageId,
-                        role: 'assistant',
-                        type: 'text',
-                        content: content,
-                        annotations: []
-                    };
-                    this.messages.push(assistantMessage);
-                } else if (assistantMessage.role === 'assistant') {
+                        // First text part, create the assistant message
+                        assistantMessage = this.createAssistantMessage(content);
+                        this.currentAssistantMessageId = assistantMessage.id;
+                        this.addMessage(assistantMessage);
+                    } else {
                     // Append text to the existing assistant message
                     assistantMessage.content += content;
+                        // Force reactivity by re-assigning (or use a helper to update message)
+                        this.updateMessage(this.currentAssistantMessageId, { content: assistantMessage.content });
                 }
                 break;
                 
-              // Data Part: 2:Array<JSONValue>\n
+                // Data Part: 2:[JSONValue] (Used here for custom tool updates)
               case '2':
-                // Currently just logs to debug, can be used for custom UI updates
                 console.log('Received data part (type 2):', content);
-                break;
-                
-              // Error Part: 3:string\n
-              case '3':
-                console.error('Received stream error part (type 3):', content);
-                // Optionally display this error in the UI
-                break;
-                
-              // Message Annotation Part: 8:Array<JSONValue>\n
-              case '8':
-                if (assistantMessage) {
-                  assistantMessage.annotations = assistantMessage.annotations || [];
-                  // Vercel sends annotations as the full object, not an array
-                  assistantMessage.annotations.push(content); 
-                } else {
-                  console.warn('Received annotation (type 8) but no current assistant message.');
+                    // Expecting an array of custom tool events from our backend wrapper
+                    if (Array.isArray(content)) {
+                       content.forEach(event => this.processToolUpdateEvent(event));
+                    } else if (typeof content === 'object' && content !== null) {
+                       this.processToolUpdateEvent(content); // Handle single object case
                 }
                 break;
                 
-              // Tool Call Part: 9:{toolCallId:string; toolName:string; args:object}\n
-              case '9':
-                 // The AI SDK sends this *after* the assistant message is complete.
-                 // Add it as a separate message in the history.
-                this.messages.push({
-                  id: this.generateId('tool-call'),
-                  role: 'assistant', // Technically part of the assistant's turn
-                  type: 'tool_call',
-                  toolCallId: content.toolCallId,
-                  toolName: content.toolName,
-                  args: content.args
-                });
+                // Error Part: 3:string
+              case '3':
+                    console.error('Received stream error (type 3):', content);
+                    this.handleError(`Assistant error: ${content}`);
                 break;
                 
-              // Tool Result Part: a:{toolCallId:string; result:object}\n
+                // Message Annotation Part: 8:[JSONValue] (Could contain structured tool updates)
+              case '8':
+                     console.log('Received annotation (type 8):', content);
+                     if (Array.isArray(content)) {
+                        content.forEach(annotation => this.processToolUpdateEvent(annotation));
+                     } else if (typeof content === 'object' && content !== null) {
+                         this.processToolUpdateEvent(content);
+                     }
+                     // Associate annotations with the current assistant message if needed
+                if (assistantMessage) {
+                       assistantMessage.annotations = [...(assistantMessage.annotations || []), content];
+                       this.updateMessage(assistantMessage.id, { annotations: assistantMessage.annotations });
+                }
+                break;
+                
+                // Tool Call Part: 9:{toolCallId, toolName, args}
+              case '9':
+                    this.addMessage(this.createToolCallMessage(content));
+                    this.initializeToolState(content.toolCallId);
+                break;
+                
+                // Tool Result Part: a:{toolCallId, result}
               case 'a':
-                 // Add this as a separate message representing the tool's output.
-                this.messages.push({
-                  id: this.generateId('tool-result'),
-                  role: 'tool', // Represents the tool's direct output
-                  type: 'tool_result',
-                  toolCallId: content.toolCallId,
-                  result: content.result,
-                  // Find the corresponding tool call to link if needed, though often just chronological order is fine.
-                  // toolName: this.messages.find(m => m.toolCallId === content.toolCallId)?.toolName
-                });
+                    this.addMessage(this.createToolResultMessage(content));
+                    this.updateToolState(content.toolCallId, { status: 'completed', isRunning: false, endTime: Date.now() });
                 break;
 
-              // --- Control Flow Parts --- 
-              // Start Step Part: f:{messageId:string}\n
-              case 'f': 
-                // Can be used to associate stream parts with a specific step if needed
-                // console.log('Step started:', content.messageId);
+                 // Message Finish Part: d:{...}
+                 case 'd':
+                    console.log('Message finished:', content);
+                    // Reset current assistant ID when the *message* finishes
+                    this.currentAssistantMessageId = null;
+                    // Don't finalize stream here; wait for reader.read() done
                 break;
                 
-              // Finish Step Part: e:{finishReason:...}
+                 // Step Finish Part: e:{...} / Start f:{...} (Less critical for basic UI)
               case 'e':
-                // Indicates a backend LLM call finished (useful for multi-step processes)
-                // console.log('Step finished:', content.finishReason);
+                 case 'f':
+                    console.log(`Step ${typeId === 'f' ? 'Start' : 'Finish'}:`, content);
                 break;
                 
-              // Finish Message Part: d:{finishReason:...}
-              case 'd':
-                // console.log('Message finished:', content.finishReason);
-                this.finalizeStream(); // Primary signal that the entire response is done.
-                this.currentAssistantMessageId = null; // Reset for the next message
-                break;
-                
-              // Ignore other parts for now, but log them
               default:
-                console.log(`Received unhandled stream part type '${typeId}':`, content);
-                break;
+                    console.log(`Ignoring unhandled stream part type '${typeId}':`, content);
             }
           },
           
           /**
-           * Handles cleanup and state changes when the stream finishes or errors.
-           * @param {string} [errorMessage] - Optional error message to display.
-           */
-          handleError(errorMessage) {
-              this.isLoading = false;
-              this.currentAssistantMessageId = null;
-              this.messages.push({
-                  id: this.generateId('error'),
-                  role: 'assistant',
-                  type: 'text',
-                  content: errorMessage
-              });
-              this.scrollToBottom();
-              this.focusInput(); // Focus input after error
+         * Finalizes the stream processing, resetting loading state.
+         */
+        finalizeStream() {
+            this.isLoading = false;
+            // currentAssistantMessageId is reset by 'd' frame
+            this.focusInput();
+            console.log('Stream finalized.');
+            // Mark any remaining 'running' tools as potentially stalled or finished implicitly?
+            // Or rely on explicit 'a' or error events. Let's rely on explicit events for now.
           },
-
+          
           /**
-            * Finalizes the stream processing.
-            */
-           finalizeStream() {
-              this.isLoading = false;
-              this.currentAssistantMessageId = null;
-              this.focusInput(); // Focus input after completion
-              console.log('Stream finalized.');
-           },
+         * Handles errors during streaming or API calls.
+         * @param {string} errorMessage - The error message to display.
+         */
+        handleError(errorMessage) {
+            this.isLoading = false;
+            this.currentAssistantMessageId = null;
+            // Mark any tools that were running as errored? Maybe too aggressive.
+            this.addMessage(this.createErrorMessage(errorMessage));
+            this.focusInput();
+        },
 
-          /**
-           * Formats message content for display (handles newlines and basic markdown like code blocks).
-           * @param {string} content - The raw message content.
-           * @returns {string} HTML formatted string.
-           */
-          formatMessage(content) {
-            if (typeof content !== 'string') return '';
-            // Basic markdown conversion (newlines to <br>, ```code``` to <pre><code>)
-            return content
-              .replace(/\n/g, '<br>')
-              .replace(/```([\s\S]*?)```/g, (_match, code) => 
-                `<pre><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`
-              );
-          },
-
-          /**
-           * Scrolls the chat messages container to the bottom.
-           */
-          scrollToBottom() {
-            this.$nextTick(() => {
-              const chatContainer = this.$refs.chatMessages; // Use Alpine ref
-              if (chatContainer) {
-                chatContainer.scrollTop = chatContainer.scrollHeight;
+        // --- Tool State Management ---
+        /**
+         * Initializes the state for a new tool call.
+         * @param {string} toolCallId - The unique ID for the tool call.
+         */
+        initializeToolState(toolCallId) {
+            if (this.toolData[toolCallId]) {
+                console.warn(`Tool state for ${toolCallId} already exists. Re-initializing.`);
+            }
+            // Use Vue.set or spread for reactivity if not using Alpine's magic
+            this.toolData = {
+              ...this.toolData,
+              [toolCallId]: {
+                  status: 'running',
+                  isRunning: true,
+                  startTime: Date.now(),
+                  endTime: null,
+                  progress: [],
+                  error: null
               }
+            };
+            // Default progress details to closed
+            this.toolProgressExpanded = { ...this.toolProgressExpanded, [toolCallId]: false };
+          },
+
+          /**
+         * Updates the state of a specific tool call.
+         * @param {string} toolCallId - The ID of the tool call to update.
+         * @param {Partial<ToolState>} updates - An object containing the state properties to update.
+         */
+        updateToolState(toolCallId, updates) {
+            if (!this.toolData[toolCallId]) {
+                console.warn(`Attempted to update non-existent tool state for ${toolCallId}. Initializing.`);
+                this.initializeToolState(toolCallId); // Initialize if missing
+            }
+            // Merge updates with existing state
+            const currentState = this.toolData[toolCallId] || {};
+            const newState = { ...currentState, ...updates };
+
+             // Ensure endTime is set if status is completed or error
+            if ((newState.status === 'completed' || newState.status === 'error') && !newState.endTime) {
+                newState.endTime = Date.now();
+            }
+            // Ensure isRunning reflects status
+            newState.isRunning = newState.status === 'running';
+
+
+            // Use spread for reactivity
+            this.toolData = { ...this.toolData, [toolCallId]: newState };
+          },
+          
+          /**
+         * Adds a progress message to a tool's state, preventing duplicates.
+         * @param {string} toolCallId - The ID of the tool call.
+         * @param {any} progressMessage - The progress message content.
+         */
+        addToolProgress(toolCallId, progressMessage) {
+            if (!this.toolData[toolCallId]) {
+                console.warn(`Attempted to add progress to non-existent tool state for ${toolCallId}. Initializing.`);
+                this.initializeToolState(toolCallId);
+            }
+
+            // Get current state immutably
+            const currentState = this.toolData[toolCallId];
+            const currentProgress = currentState.progress || []; // Ensure progress is an array
+
+            // Simple duplicate check based on stringification (adjust if needed)
+            const newMessageStr = JSON.stringify(progressMessage);
+            if (currentProgress.length > 0 && JSON.stringify(currentProgress[currentProgress.length - 1]) === newMessageStr) {
+               return; // Ignore duplicate
+            }
+
+            console.log(`Adding progress for ${toolCallId}:`, progressMessage); // Log incoming progress
+
+            // Create the updated progress array
+            const updatedProgress = [...currentProgress, progressMessage];
+
+            // Update the state using the existing updateToolState method
+            this.updateToolState(toolCallId, {
+                progress: updatedProgress,
+                status: 'running', // Ensure status is running if progress arrives
+                isRunning: true
+            });
+
+            // --- Explicitly trigger reactivity on the toolData object ---
+            // Although updateToolState does this with spread, let's be sure.
+            // this.toolData = { ...this.toolData };
+            // --- (Commented out for now as updateToolState should suffice) ---
+
+            // Log the state *after* update
+            console.log(`Tool data after progress update for ${toolCallId}:`, JSON.parse(JSON.stringify(this.toolData[toolCallId])));
+
+
+             // Auto-expand progress when the *first* message arrives
+             if (currentProgress.length === 0 && !this.toolProgressExpanded[toolCallId]) {
+                this.toolProgressExpanded = { ...this.toolProgressExpanded, [toolCallId]: true };
+            }
+          },
+          
+          /**
+         * Sets an error state for a tool call.
+         * @param {string} toolCallId - The ID of the tool call.
+         * @param {any} errorDetails - Details about the error.
+         */
+        setToolError(toolCallId, errorDetails) {
+            this.updateToolState(toolCallId, {
+                status: 'error', 
+                isRunning: false,
+                error: errorDetails || 'Unknown error',
+                endTime: Date.now()
             });
           },
+          
+        /**
+         * Processes custom tool update events received via stream type 2 or 8.
+         * Assumes events have a structure like: { type: 'tool_progress'|'tool_error'|..., toolCallId: '...', ... }
+         * @param {object} event - The tool update event object.
+         */
+        processToolUpdateEvent(event) {
+          if (!event || typeof event !== 'object' || !event.toolCallId) return;
 
-          /**
-           * Determines the CSS class for a message based on its role and type.
-           * @param {object} message - The message object.
-           * @returns {string} The CSS class string.
-           */
-          getMessageClass(message) {
-              if (message.role === 'user') return 'message user-message';
-              if (message.role === 'assistant') {
-                  if (message.type === 'tool_call') return 'message tool-call-message';
-                  return 'message assistant-message'; // Default assistant text
-              }
-              if (message.role === 'tool' && message.type === 'tool_result') return 'message tool-result-message';
-              // Fallback for other/unknown types
-              return 'message'; 
+          const { toolCallId } = event;
+
+          // Check for specific structures within annotations/data
+          const progressData = event.tool_progress || (event.type === 'tool_progress' ? event : null);
+          const errorData = event.tool_error || (event.type === 'tool_error' ? event : null);
+          const completionData = event.tool_completion || (event.type === 'tool_completion' ? event : null);
+          const statusData = event.tool_status || (event.type === 'tool_status' ? event : null);
+
+          if (progressData) {
+              // --- Log the raw progress data being processed ---
+              console.log(`Processing progress event for ${toolCallId}:`, progressData);
+              // -----------------------------------------------
+              this.addToolProgress(toolCallId, progressData.message ?? progressData);
+          } else if (errorData) {
+              this.setToolError(toolCallId, errorData.error ?? errorData);
+          } else if (completionData) {
+               this.updateToolState(toolCallId, { status: 'completed', isRunning: false, endTime: Date.now() });
+          } else if (statusData) {
+               // Optional: Handle generic status updates if needed
+               this.updateToolState(toolCallId, { status: statusData.status || 'running' });
+            }
           },
+          
+          /**
+         * Toggles the visibility of the progress details for a tool call.
+         * @param {Event} event - The click event.
+         * @param {string} toolCallId - The ID of the tool call.
+         */
+        toggleProgressDetails(event, toolCallId) {
+            const currentlyExpanded = this.toolProgressExpanded[toolCallId] ?? false;
+            this.toolProgressExpanded = { ...this.toolProgressExpanded, [toolCallId]: !currentlyExpanded };
+            // Update the button's attribute for CSS styling if needed (handled by :data-expanded binding now)
+            // event.currentTarget.setAttribute('data-expanded', !currentlyExpanded);
+        },
 
-          /** Focuses the chat input field. */
-          focusInput() {
-              this.$nextTick(() => {
-                  this.$refs.chatInput?.focus();
-              });
+        // --- Message Creation ---
+        /** Creates a user message object. */
+        createUserMessage(content) {
+          return { id: this.generateId('user'), role: 'user', type: 'text', content, timestamp: Date.now() };
+        },
+        /** Creates an assistant text message object. */
+        createAssistantMessage(content) {
+          return { id: this.generateId('assistant'), role: 'assistant', type: 'text', content, timestamp: Date.now(), annotations: [] };
+        },
+        /** Creates a tool call message object. */
+        createToolCallMessage(data) {
+          return { id: this.generateId('tool-call'), role: 'assistant', type: 'tool_call', toolCallId: data.toolCallId, toolName: data.toolName, args: data.args, timestamp: Date.now() };
+        },
+        /** Creates a tool result message object. */
+        createToolResultMessage(data) {
+          return { id: this.generateId('tool-result'), role: 'tool', type: 'tool_result', toolCallId: data.toolCallId, result: data.result, timestamp: Date.now() };
+        },
+        /** Creates an error message object for display. */
+        createErrorMessage(content) {
+          return { id: this.generateId('error'), role: 'assistant', type: 'text', content: `⚠️ **Error:** ${content}`, timestamp: Date.now() };
+        },
+
+        // --- Message Helpers ---
+        /** Adds a message to the list and triggers reactivity. */
+        addMessage(message) {
+          this.messages.push(message);
+          // If not using Alpine's magic, ensure array update triggers reactivity
+          // this.messages = [...this.messages, message];
+        },
+         /** Finds a message by its ID. */
+        findMessageById(id) {
+            return id ? this.messages.find(m => m.id === id) : null;
+        },
+        /** Updates a message in the list immutably. */
+        updateMessage(id, updates) {
+            const index = this.messages.findIndex(m => m.id === id);
+            if (index !== -1) {
+                this.messages[index] = { ...this.messages[index], ...updates };
+                // Force reactivity if needed: this.messages = [...this.messages];
+            }
+        },
+        /** Prepares messages for the API, conforming to CoreMessage structure. */
+        prepareApiMessages() {
+          // Map UI messages to the structure expected by the Vercel AI SDK backend
+          // Handles combining tool calls and their results.
+            const apiMsgs = [];
+            for (let i = 0; i < this.messages.length; i++) {
+                const msg = this.messages[i];
+                if (msg.role === 'user' || (msg.role === 'assistant' && msg.type === 'text')) {
+                    // Standard text message
+                    apiMsgs.push({ role: msg.role, content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) });
+                } else if (msg.type === 'tool_call') {
+                    // Find the corresponding result *after* this call in the history
+                    const resultMsg = this.messages.slice(i + 1).find(res => res.type === 'tool_result' && res.toolCallId === msg.toolCallId);
+
+                    const toolInvocation = {
+                        toolCallId: msg.toolCallId,
+                        toolName: msg.toolName,
+                        args: msg.args,
+                        ...(resultMsg && { result: resultMsg.result }) // Add result if found
+                    };
+
+                    // Check if the *last* message added to apiMsgs was an assistant message
+                    // If so, append the tool invocation. Otherwise, create a new assistant message.
+                    const lastApiMsg = apiMsgs[apiMsgs.length - 1];
+                     if (lastApiMsg && lastApiMsg.role === 'assistant' && !lastApiMsg.content /* Add to assistant msg only if it doesn't have text content? */) {
+                        lastApiMsg.toolInvocations = [...(lastApiMsg.toolInvocations || []), toolInvocation];
+                    } else {
+                        // If the previous message wasn't an assistant message, or had content,
+                        // create a new assistant message containing just this tool invocation.
+                        apiMsgs.push({
+                            role: 'assistant',
+                            content: '', // Typically empty for pure tool call/result pairs
+                            toolInvocations: [toolInvocation]
+                        });
+                    }
+                     // Skip the result message in the main loop as it's handled here
+                     if (resultMsg) {
+                        const resultIndex = this.messages.findIndex(m => m.id === resultMsg.id);
+                        if (resultIndex > i) i = resultIndex; // Jump loop index past the handled result
+                     }
+                }
+                // Skip tool_result messages explicitly as they are handled above
+            }
+            return apiMsgs;
+        },
+
+        // --- UI Formatting & Helpers ---
+        /** Formats timestamp for display. */
+        formatTimestamp(timestamp) {
+          if (!timestamp) return '';
+          return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        },
+        /** Generates a unique ID. */
+        generateId(prefix = 'msg') {
+          return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        },
+        /** Gets the CSS class for the message wrapper. */
+        getMessageWrapperClass(message) {
+          if (!message) return 'message-wrapper';
+          if (message.role === 'user') return 'message-wrapper user-message';
+          if (message.role === 'assistant' || message.role === 'tool') return 'message-wrapper assistant-message'; // Group assistant/tool visually
+          return 'message-wrapper'; // Default
+        },
+        /** Formats message content with basic markdown (code blocks, inline, bold, links). */
+        formatMessageContent(content) {
+            if (typeof content !== 'string') return '';
+            return content
+            .replace(/</g, '&lt;') // Basic HTML escaping first
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>') // Newlines
+            .replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => // Code blocks
+              `<div class="code-block"><div class="code-block-header">${lang || 'Code'}</div><pre><code>${code}</code></pre></div>`
+            )
+            .replace(/`([^`]+)`/g, '<code>$1</code>') // Inline code
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'); // Links
+        },
+        /** Formats a tool result for display in <pre>. */
+        formatToolResult(result) {
+            if (result === null || result === undefined) return 'null';
+            if (typeof result === 'object') return JSON.stringify(result, null, 2);
+            return String(result);
+        },
+         /** Formats a progress message for display. */
+        formatProgressMessage(progress) {
+           if (typeof progress === 'object' && progress !== null) {
+             return JSON.stringify(progress); // Simple JSON stringify for objects
+           }
+           return String(progress); // Convert others to string
+        },
+        /** Formats a tool error for display. */
+        formatToolError(error) {
+           if (!error) return 'Unknown error';
+           if (typeof error === 'object') {
+             return error.message || JSON.stringify(error); // Prefer message field
+           }
+           return String(error);
+        },
+        /** Checks if a tool result should be rendered as hypermedia. */
+        isHypermediaResult(result) {
+            return typeof result === 'object' && result !== null && (result.type === 'hypermedia' || result.html);
+        },
+         /** Renders hypermedia content (delegates based on type). */
+        renderHypermedia(result) {
+            if (!this.isHypermediaResult(result)) return '';
+            if (result.html) return result.html; // Trust provided HTML
+
+            // Add specific renderers if needed
+            if (result.type === 'table' && result.data) return this.renderTable(result.data);
+            if (result.type === 'form' && result.data) return this.renderForm(result.data);
+
+            // Fallback: Render as JSON in a code block
+            return `<div class="code-block"><div class="code-block-header">Hypermedia (${result.type || 'Unknown'})</div><pre>${this.formatToolResult(result)}</pre></div>`;
+        },
+        /** Renders table data as HTML. */
+        renderTable(data) {
+           if (!data || !Array.isArray(data.headers) || !Array.isArray(data.rows)) return '<p>Invalid table data</p>';
+           const headers = data.headers.map(h => `<th>${this.escapeHtml(h)}</th>`).join('');
+           const rows = data.rows.map(row => {
+             const cells = row.map(cell => `<td>${this.escapeHtml(cell)}</td>`).join('');
+             return `<tr>${cells}</tr>`;
+           }).join('');
+           return `<div class="hypermedia-table"><div class="code-block-header">Table</div><table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table></div>`;
+        },
+        /** Renders form data as HTML. NOTE: Needs HTMX or similar for actual submission handling. */
+        renderForm(formData) {
+            if (!formData || !Array.isArray(formData.fields)) return '<p>Invalid form data</p>';
+            const formId = formData.id || `form-${this.generateId()}`;
+            const fieldsHtml = formData.fields.map(field => {
+              const label = `<label for="${field.id}">${this.escapeHtml(field.label)}</label>`;
+              let inputHtml = `<span>Unsupported field: ${field.type}</span>`;
+              if (field.type === 'text') {
+                inputHtml = `<input type="text" id="${field.id}" name="${field.name || field.id}" placeholder="${this.escapeHtml(field.placeholder || '')}" />`;
+              } else if (field.type === 'select' && Array.isArray(field.options)) {
+                const options = field.options.map(opt => `<option value="${this.escapeHtml(opt.value)}">${this.escapeHtml(opt.label)}</option>`).join('');
+                inputHtml = `<select id="${field.id}" name="${field.name || field.id}">${options}</select>`;
+              }
+              // Add more field types (textarea, checkbox, etc.) as needed
+              return `<div class="form-field">${label}${inputHtml}</div>`;
+            }).join('');
+
+            // WARNING: hx-post is just a placeholder here. Needs backend endpoint.
+            return `<div class="hypermedia-form"><div class="code-block-header">${this.escapeHtml(formData.title || 'Form')}</div><form id="${formId}" hx-post="${formData.submitUrl || '/api/form-submit'}" hx-target="#${formId}" hx-swap="outerHTML">${fieldsHtml}<button type="submit">Submit</button></form></div>`;
+        },
+        /** Basic HTML escaping helper */
+        escapeHtml(unsafe) {
+          if (typeof unsafe !== 'string') return unsafe;
+          return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+        },
+
+        // --- Tool State Accessors (for template bindings) ---
+        /** Safely gets tool data object. */
+        getToolData(toolCallId) { return this.toolData[toolCallId]; },
+        /** Gets the display text for tool status. */
+        getToolStatusText(toolCallId) {
+            const status = this.toolData[toolCallId]?.status;
+            if (status === 'running') return 'Running';
+            if (status === 'completed') return 'Completed';
+            if (status === 'error') return 'Failed';
+            return status || 'Pending';
+        },
+        /** Gets the CSS class for the tool status pill. */
+        getToolStatusClass(toolCallId) {
+           const status = this.toolData[toolCallId]?.status;
+            const baseClass = 'tool-status-pill';
+            if (status === 'running') return `${baseClass} tool-status-running`;
+            if (status === 'completed') return `${baseClass} tool-status-completed`;
+            if (status === 'error') return `${baseClass} tool-status-error`;
+            return baseClass; // Default or pending
+        },
+         /** Gets the calculated duration of a tool call. */
+        getToolDuration(toolCallId) {
+            const tool = this.toolData[toolCallId];
+            if (!tool || !tool.startTime) return '';
+            const start = tool.startTime;
+            const end = tool.endTime || Date.now(); // Use current time if still running
+            const durationMs = Math.max(0, end - start);
+
+            if (durationMs < 1000) return `${durationMs}ms`;
+            if (durationMs < 60000) return `${(durationMs / 1000).toFixed(1)}s`;
+            const minutes = Math.floor(durationMs / 60000);
+            const seconds = Math.floor((durationMs % 60000) / 1000);
+            return `${minutes}m ${seconds}s`;
+        },
+        /** Gets the latest progress message for the status display. */
+        getLatestProgressMessage(toolCallId) {
+          // --- Log when this function is called and what data it finds ---
+          console.log(`getLatestProgressMessage called for ${toolCallId}`);
+          const tool = this.toolData[toolCallId];
+          const progress = tool?.progress;
+          console.log(`  Progress data found:`, progress);
+          // -------------------------------------------------------------
+
+          if (!progress || progress.length === 0) return null; // No progress yet
+
+          const latest = progress[progress.length - 1];
+          let latestMessage = 'Processing...'; // Default fallback
+
+           if (typeof latest === 'object' && latest !== null) {
+              // Prioritize a 'message' field if it exists and is a string
+              if (typeof latest.message === 'string') {
+                  latestMessage = latest.message;
+              }
+              // Check for html content next
+              else if (typeof latest.html === 'string') {
+                   latestMessage = '[Displaying formatted content]'; // Placeholder for HTML
+              }
+              // Otherwise, stringify the object concisely
+              else {
+                 latestMessage = JSON.stringify(latest);
+              }
+           } else if (latest !== null && latest !== undefined) {
+               latestMessage = String(latest); // Handle primitive types
+           }
+
+           // Truncate long messages for the status display
+           const maxLength = 100;
+           const truncatedMessage = latestMessage.length > maxLength
+               ? latestMessage.substring(0, maxLength) + '...'
+               : latestMessage;
+
+           console.log(`  Returning latest message: "${truncatedMessage}"`); // Log the result
+           return truncatedMessage;
+        },
+
+        // --- Input Handling ---
+        /** Handles Enter key press in textarea (submit or newline). */
+        handleEnterKey(event) {
+          if (this.isLoading) return;
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            this.sendMessage();
           }
+          // Allow default behavior (newline) for Shift+Enter
+        },
+        /** Automatically resizes textarea based on content. */
+          autoResizeTextarea() {
+            const textarea = this.$refs.chatInput;
+            if (!textarea) return;
+          const initialHeight = '2.5rem'; // Match button height initially
+          textarea.style.height = initialHeight; // Reset briefly
+            const scrollHeight = textarea.scrollHeight;
+          const maxHeight = 150; // Defined in CSS as max-height
+          textarea.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+          // Ensure scrollbar appears if needed (managed by CSS overflow-y: auto)
+        },
+        /** Focuses the chat input textarea. */
+        focusInput() {
+          this.$nextTick(() => this.$refs.chatInput?.focus());
+        },
+
+        // --- UI Helpers ---
+        /** Scrolls the chat message container to the bottom. */
+        scrollToBottom() {
+          this.$nextTick(() => {
+            const el = this.$refs.chatMessages;
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+        },
         };
       }
     </script>

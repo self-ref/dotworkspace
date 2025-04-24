@@ -1,8 +1,13 @@
+import Ajv from "ajv";
 import { $ } from "bun";
 import Elysia, { t } from "elysia";
 import path from "node:path";
 import { Config } from "../../config";
+import { formatToolLog } from "../../lib/protocol/format";
 import type { ToolRunStatus } from "./_schemas";
+
+// Create Ajv instance for schema validation
+const ajv = new Ajv({ allErrors: true });
 
 export const runTool = new Elysia()
   .post('/tools/:toolName/runs', async function* runTool({ params: { toolName }, body: { runId, input } }) {
@@ -31,7 +36,23 @@ export const runTool = new Elysia()
       /** @type { { input: any, output: any } } */
       const toolSpec = await Bun.file(toolSpecFilePath).json();
 
-      // TODO: Validate the input against the tool spec
+      // Validate the input against the tool spec
+      if (toolSpec.input) {
+        const validate = ajv.compile(toolSpec.input);
+        const valid = validate(input);
+        
+        if (!valid) {
+          const errors = validate.errors || [];
+          const errorMessage = formatValidationErrors(errors);
+          throw new Error(`Invalid tool input: ${errorMessage}`, { 
+            cause: { 
+              errors, 
+              input,
+              schema: toolSpec.input 
+            } 
+          });
+        }
+      }
 
       // Import the tool function
       const { default: toolFn } = await import(toolMainFilePath) as { default: (input: any) => AsyncGenerator<string, any> };
@@ -52,8 +73,16 @@ export const runTool = new Elysia()
       while (!iterResult.done) {
         const message = iterResult.value;
 
-        // Concurrently log and emit the message
-        yield formatMessage(runId, message);
+        // Format the message with detailed information
+        const formattedMessage = formatToolLog(runId, 'message', message);
+        
+        // Log the message
+        console.log(formattedMessage);
+
+        // Yield the message with a specific format that's easier to parse
+        yield `${formattedMessage}\n`;
+        
+        // Also write to the log file
         await handleToolRunMessage(toolName, runId, message);
         
         // Get the next value
@@ -63,15 +92,32 @@ export const runTool = new Elysia()
       // When done, the return value is available in the final result's value
       const result = iterResult.value;
 
-      // Concurrently write and emit the result
-      yield formatResult(runId, result);
+      // Validate the output against the tool spec
+      if (toolSpec.output) {
+        const validate = ajv.compile(toolSpec.output);
+        const valid = validate(result);
+        
+        if (!valid) {
+          const errors = validate.errors || [];
+          const errorMessage = formatValidationErrors(errors);
+          throw new Error(`Invalid tool output: ${errorMessage}`, { 
+            cause: { 
+              errors, 
+              result,
+              schema: toolSpec.output 
+            } 
+          });
+        }
+      }
+
+      // Log and handle the result
+      console.log(formatToolLog(runId, 'result', result));
       await handleToolRunResult(toolName, runId, result);
 
-      // return result;
+      yield formatToolLog(runId, 'result', result);
     } catch (error) {
-      console.error(`[${runId}] - Error:`, error);
-      // Concurrently log and emit the error
-      yield formatError(runId, error as Error);
+      // Emit and handle the error
+      yield `${formatToolLog(runId, 'error', error as Error)}\n`;
       await handleToolRunError(toolName, runId, error as Error);
     }
 
@@ -109,9 +155,7 @@ async function handleToolRunError(toolName: string, runId: string, error: Error)
 
   await Promise.all([
     // Write the error to the tool run logs file
-    $`echo "${formatError(runId, error)}" >> ${toolRunLogsFile}`,
-    // Emit the error
-    Bun.write(Bun.stdout, `${formatError(runId, error)}\n`),
+    $`echo "${formatToolLog(runId, 'error', error)}" >> ${toolRunLogsFile}`,
     // Write the error to the tool run status file
     writeToolRunStatusFile(toolName, runId, {
       runId,
@@ -125,43 +169,19 @@ async function handleToolRunError(toolName: string, runId: string, error: Error)
   ]);
 }
 
-function formatError(runId: string, error: Error) {
-  const data = {
-    name: error.name,
-    message: error.message,
-    cause: error.cause,
-    stack: error.stack,
-  };
-
-  return `[${runId}] error: ${JSON.stringify(data)}`;
-}
-
 async function handleToolRunMessage(toolName: string, runId: string, message: string) {
   // Get the tool run logs file
   const toolRunLogsFile = await getToolRunLogsFile(toolName, runId);
-
-  await Promise.all([
-    // Write the message to the tool run logs file
-    $`echo "${formatMessage(runId, message)}" >> ${toolRunLogsFile}`,
-    // Emit the message
-    Bun.write(Bun.stdout, `${formatMessage(runId, message)}\n`)
-  ]);
-}
-
-function formatMessage(runId: string, message: string) {
-  return `[${runId}] message: ${message}`;
+  // Write the message to the tool run logs file
+  await $`echo "${formatToolLog(runId, 'message', message)}" >> ${toolRunLogsFile}`;
 }
 
 async function handleToolRunResult(toolName: string, runId: string, result: unknown) {
   // Get the tool run logs file
   const toolRunLogsFile = await getToolRunLogsFile(toolName, runId);
-
+  // Concurrently write the result to the tool run logs file and status file
   await Promise.all([
-    // Write the result to the tool run logs file
-    $`echo "${formatResult(runId, result)}" >> ${toolRunLogsFile}`,
-    // Emit the result
-    Bun.write(Bun.stdout, `${formatResult(runId, result)}\n`),
-    // Write the result to the tool run status file
+    $`echo "${formatToolLog(runId, 'result', result)}" >> ${toolRunLogsFile}`,
     writeToolRunStatusFile(toolName, runId, {
       runId,
       status: "completed",
@@ -170,6 +190,17 @@ async function handleToolRunResult(toolName: string, runId: string, result: unkn
   ]);
 }
 
-function formatResult(runId: string, result: unknown) {
-  return `[${runId}] result: ${JSON.stringify(result)}`;
+// Helper function to format validation errors
+function formatValidationErrors(errors: any[]): string {
+  return errors.map(err => {
+    const path = err.instancePath || '';
+    const prop = err.params?.property || '';
+    const message = err.message || 'validation error';
+    
+    if (err.keyword === 'required') {
+      return `Missing required property: '${prop}'`;
+    }
+    
+    return `${path}${prop ? '.' + prop : ''} ${message}`;
+  }).join('; ');
 }

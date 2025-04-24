@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
     "postinstall": "bun run scripts/postinstall.ts"
   },
   "devDependencies": {

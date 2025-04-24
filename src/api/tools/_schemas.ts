@@ -15,7 +15,7 @@ export const ToolSchema = t.Object({
   description: t.String({ description: 'A description of the tool' }),
   inputSchema: t.Optional(t.Any({ description: 'The JSON Schema of the tool\'s input' })),
   outputSchema: t.Optional(t.Any({ description: 'The JSON Schema of the tool\'s output' })),
-  usageExamples: t.Optional(t.Array(ToolUsageExampleSchema, { description: 'Example usages of the tool' })),
+  usageExamples: t.Optional(t.String({ description: 'Example usages of the tool' })),
 });
 
 /** An error object */
