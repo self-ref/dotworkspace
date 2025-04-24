@@ -9,6 +9,6 @@ A workspace server that allows LLMs to create and run their own tools on your lo
 To start the server and store your workspace at `~/.workspace`, run the following command:
 
 ```bash
-bunx dotworkspace -w ~/.workspace
+bun dev -w ~/.workspace
 > Your workspace at ~/.workspace is listening on localhost:3000
 ```
